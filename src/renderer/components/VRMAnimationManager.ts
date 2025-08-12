@@ -118,18 +118,6 @@ export class VRMAnimationManager {
   }
 
   /**
-   * アニメーションを停止
-   */
-  stopAnimation(): void {
-    if (this.currentAction) {
-      this.currentAction.stop();
-      this.currentAction = null;
-    }
-    this.isPlaying = false;
-    console.log('Animation stopped');
-  }
-
-  /**
    * アニメーションを一時停止/再開
    */
   toggleAnimation(): void {
@@ -144,6 +132,18 @@ export class VRMAnimationManager {
       this.isPlaying = true;
       console.log('Animation resumed');
     }
+  }
+
+  /**
+   * アニメーションを完全停止
+   */
+  stopAnimation(): void {
+    if (this.currentAction) {
+      this.currentAction.stop();
+      this.currentAction = null;
+    }
+    this.isPlaying = false;
+    console.log('Animation stopped');
   }
 
   /**

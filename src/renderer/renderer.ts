@@ -35,9 +35,7 @@ const tryAgain = document.getElementById('try-again') as HTMLButtonElement;
 
 // VRM Preview elements
 const vrmViewerContainer = document.getElementById('vrm-viewer') as HTMLDivElement;
-const playAnimationBtn = document.getElementById('play-animation') as HTMLButtonElement;
-const stopAnimationBtn = document.getElementById('stop-animation') as HTMLButtonElement;
-const resetAnimationBtn = document.getElementById('reset-animation') as HTMLButtonElement;
+const toggleAnimationBtn = document.getElementById('toggle-animation') as HTMLButtonElement;
 const animationStatus = document.getElementById('animation-status') as HTMLDivElement;
 
 let currentFilePath: string | null = null;
@@ -46,9 +44,7 @@ let vrmViewer: VRMViewer | null = null;
 let animationManager: VRMAnimationManager | null = null;
 
 // Initialize controls as disabled
-playAnimationBtn.disabled = true;
-stopAnimationBtn.disabled = true;
-resetAnimationBtn.disabled = true;
+toggleAnimationBtn.disabled = true;
 
 function showSection(section: 'drop' | 'progress' | 'result' | 'error') {
   dropZone.classList.toggle('hidden', section !== 'drop');
@@ -245,12 +241,30 @@ async function initializeVRMPreview(): Promise<void> {
     }
 
     vrmViewerContainer.classList.add('loaded');
-    updateAnimationStatus('VRM model loaded. Ready to preview animation.');
 
-    // Enable controls
-    playAnimationBtn.disabled = false;
-    stopAnimationBtn.disabled = false;
-    resetAnimationBtn.disabled = false;
+    // Auto-play animation if VRMA data is available
+    if (animationManager && currentVrmaData) {
+      try {
+        updateAnimationStatus('Loading and starting animation...');
+        const clip = await animationManager.loadVRMA(currentVrmaData);
+        await animationManager.playAnimation(clip, true);
+        
+        // Set button to Stop since animation is now playing
+        toggleAnimationBtn.textContent = 'Stop';
+        toggleAnimationBtn.disabled = false;
+        updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+        
+        console.log('VRM animation auto-started successfully');
+      } catch (error) {
+        console.error('Failed to auto-start animation:', error);
+        updateAnimationStatus('VRM model loaded. Animation auto-start failed.');
+        toggleAnimationBtn.textContent = 'Play';
+        toggleAnimationBtn.disabled = false;
+      }
+    } else {
+      updateAnimationStatus('VRM model loaded. Ready to preview animation.');
+      toggleAnimationBtn.disabled = false;
+    }
 
     console.log('VRM preview initialized successfully');
   } catch (error) {
@@ -263,47 +277,44 @@ function updateAnimationStatus(message: string): void {
   animationStatus.textContent = message;
 }
 
-// VRM Animation Control Event Listeners
-playAnimationBtn.addEventListener('click', async () => {
-  if (!animationManager || !currentVrmaData) {
-    updateAnimationStatus('No animation data available');
+// VRM Animation Control Event Listener
+toggleAnimationBtn.addEventListener('click', async () => {
+  if (!animationManager) {
+    updateAnimationStatus('No animation manager available');
     return;
   }
 
   try {
-    playAnimationBtn.disabled = true;
-    updateAnimationStatus('Loading animation...');
-
-    const clip = await animationManager.loadVRMA(currentVrmaData);
-    await animationManager.playAnimation(clip, true);
-
-    updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+    // アニメーションが読み込まれていない場合は最初に読み込む
+    if (!animationManager.getCurrentClip() && currentVrmaData) {
+      toggleAnimationBtn.disabled = true;
+      updateAnimationStatus('Loading animation...');
+      
+      const clip = await animationManager.loadVRMA(currentVrmaData);
+      await animationManager.playAnimation(clip, true);
+      
+      toggleAnimationBtn.textContent = 'Stop';
+      updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+    } else {
+      // 既に読み込まれている場合は一時停止/再開をトグル
+      const playState = animationManager.getPlayState();
+      
+      if (playState.isPlaying) {
+        animationManager.toggleAnimation();
+        toggleAnimationBtn.textContent = 'Play';
+        updateAnimationStatus('Animation paused');
+      } else {
+        animationManager.toggleAnimation();
+        toggleAnimationBtn.textContent = 'Stop';
+        updateAnimationStatus(`Playing: ${playState.clipName || 'Animation'}`);
+      }
+    }
   } catch (error) {
-    console.error('Failed to play animation:', error);
-    updateAnimationStatus(`Error: ${error instanceof Error ? error.message : 'Failed to play'}`);
+    console.error('Failed to toggle animation:', error);
+    updateAnimationStatus(`Error: ${error instanceof Error ? error.message : 'Failed to toggle'}`);
   } finally {
-    playAnimationBtn.disabled = false;
+    toggleAnimationBtn.disabled = false;
   }
-});
-
-stopAnimationBtn.addEventListener('click', () => {
-  if (!animationManager) {
-    updateAnimationStatus('No animation manager available');
-    return;
-  }
-
-  animationManager.stopAnimation();
-  updateAnimationStatus('Animation stopped');
-});
-
-resetAnimationBtn.addEventListener('click', () => {
-  if (!animationManager) {
-    updateAnimationStatus('No animation manager available');
-    return;
-  }
-
-  animationManager.resetPose();
-  updateAnimationStatus('Pose reset to T-pose');
 });
 
 convertAnother.addEventListener('click', () => {
@@ -319,9 +330,8 @@ convertAnother.addEventListener('click', () => {
   currentVrmaData = null;
   
   // Reset controls
-  playAnimationBtn.disabled = true;
-  stopAnimationBtn.disabled = true;
-  resetAnimationBtn.disabled = true;
+  toggleAnimationBtn.disabled = true;
+  toggleAnimationBtn.textContent = 'Play';
   updateAnimationStatus('');
 });
 

@@ -9,6 +9,7 @@ function createWindow() {
     width: 900,
     height: 700,
     acceptFirstMouse: true,
+    autoHideMenuBar: true, // Hide menu bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
