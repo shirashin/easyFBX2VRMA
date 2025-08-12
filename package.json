@@ -5,7 +5,6 @@
   "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
-    "postinstall": "node download-fbx2gltf.js",
     "dev": "vite",
     "build": "vite build && electron-builder",
     "build:win": "npm run build -- --win",
