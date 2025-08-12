@@ -1,3 +1,7 @@
+import { VRMViewer } from './components/VRMViewer.js';
+import { VRMAnimationManager } from './components/VRMAnimationManager.js';
+import Character02VrmUrl from './assets/models/Character02.vrm?url';
+
 declare global {
   interface Window {
     electronAPI: {
@@ -29,9 +33,27 @@ const errorMessage = document.getElementById('error-message') as HTMLParagraphEl
 const convertAnother = document.getElementById('convert-another') as HTMLButtonElement;
 const tryAgain = document.getElementById('try-again') as HTMLButtonElement;
 
-let currentFilePath: string | null = null;
+// Setup elements
+const setupSection = document.getElementById('setup-section') as HTMLDivElement;
+const setupMessage = document.getElementById('setup-message') as HTMLParagraphElement;
+const setupProgressFill = document.getElementById('setup-progress-fill') as HTMLDivElement;
+const setupProgressText = document.getElementById('setup-progress-text') as HTMLDivElement;
 
-function showSection(section: 'drop' | 'progress' | 'result' | 'error') {
+// VRM Preview elements
+const vrmViewerContainer = document.getElementById('vrm-viewer') as HTMLDivElement;
+const toggleAnimationBtn = document.getElementById('toggle-animation') as HTMLButtonElement;
+const animationStatus = document.getElementById('animation-status') as HTMLDivElement;
+
+let currentFilePath: string | null = null;
+let currentVrmaData: ArrayBuffer | null = null;
+let vrmViewer: VRMViewer | null = null;
+let animationManager: VRMAnimationManager | null = null;
+
+// Initialize controls as disabled
+toggleAnimationBtn.disabled = true;
+
+function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error') {
+  setupSection.classList.toggle('hidden', section !== 'setup');
   dropZone.classList.toggle('hidden', section !== 'drop');
   progressSection.classList.toggle('hidden', section !== 'progress');
   resultSection.classList.toggle('hidden', section !== 'result');
@@ -40,6 +62,14 @@ function showSection(section: 'drop' | 'progress' | 'result' | 'error') {
 
 function updateProgress(percent: number) {
   progressFill.style.width = `${percent}%`;
+}
+
+function updateSetupProgress(percent: number, message?: string) {
+  setupProgressFill.style.width = `${percent}%`;
+  setupProgressText.textContent = `${percent}%`;
+  if (message) {
+    setupMessage.textContent = message;
+  }
 }
 
 async function handleFile(filePath: string) {
@@ -75,6 +105,13 @@ async function handleFile(filePath: string) {
       updateProgress(100);
       
       outputPath.textContent = `Saved to: ${savePath}`;
+      
+      // Store VRMA data for preview
+      currentVrmaData = vrmaData;
+      
+      // Initialize VRM preview
+      await initializeVRMPreview();
+      
       showSection('result');
     } else {
       throw new Error('Save cancelled');
@@ -177,15 +214,140 @@ fileInput.addEventListener('change', async (e) => {
   const files = target.files;
   if (files && files.length > 0) {
     const file = files[0];
-    if (file.path) {
-      handleFile(file.path);
+    const filePath = (file as any).path;
+    if (filePath) {
+      handleFile(filePath);
     }
   }
 });
 
+// VRM Preview Functions
+async function initializeVRMPreview(): Promise<void> {
+  try {
+    // Dispose existing viewer
+    if (vrmViewer) {
+      vrmViewer.dispose();
+      vrmViewer = null;
+      animationManager = null;
+    }
+
+    // Clear container
+    vrmViewerContainer.innerHTML = '';
+    vrmViewerContainer.classList.remove('loaded');
+
+    // Initialize VRM viewer
+    vrmViewer = new VRMViewer(vrmViewerContainer, {
+      background: 0x212121,
+      cameraPosition: { x: 0, y: 1.3, z: -3 },
+      cameraTarget: { x: 0, y: 1, z: 0 },
+      enableShadows: true,
+      enableOrbitControls: true,
+      enableGround: true,
+    });
+
+    await vrmViewer.initialize();
+
+    // Load VRM model
+    const vrm = await vrmViewer.loadVRM(Character02VrmUrl);
+    const mixer = vrmViewer.getMixer();
+
+    if (mixer) {
+      animationManager = new VRMAnimationManager(vrm, mixer);
+    }
+
+    vrmViewerContainer.classList.add('loaded');
+
+    // Auto-play animation if VRMA data is available
+    if (animationManager && currentVrmaData) {
+      try {
+        updateAnimationStatus('Loading and starting animation...');
+        const clip = await animationManager.loadVRMA(currentVrmaData);
+        await animationManager.playAnimation(clip, true);
+        
+        // Set button to Stop since animation is now playing
+        toggleAnimationBtn.textContent = 'Stop';
+        toggleAnimationBtn.disabled = false;
+        updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+        
+        console.log('VRM animation auto-started successfully');
+      } catch (error) {
+        console.error('Failed to auto-start animation:', error);
+        updateAnimationStatus('VRM model loaded. Animation auto-start failed.');
+        toggleAnimationBtn.textContent = 'Play';
+        toggleAnimationBtn.disabled = false;
+      }
+    } else {
+      updateAnimationStatus('VRM model loaded. Ready to preview animation.');
+      toggleAnimationBtn.disabled = false;
+    }
+
+    console.log('VRM preview initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize VRM preview:', error);
+    updateAnimationStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+function updateAnimationStatus(message: string): void {
+  animationStatus.textContent = message;
+}
+
+// VRM Animation Control Event Listener
+toggleAnimationBtn.addEventListener('click', async () => {
+  if (!animationManager) {
+    updateAnimationStatus('No animation manager available');
+    return;
+  }
+
+  try {
+    // アニメーションが読み込まれていない場合は最初に読み込む
+    if (!animationManager.getCurrentClip() && currentVrmaData) {
+      toggleAnimationBtn.disabled = true;
+      updateAnimationStatus('Loading animation...');
+      
+      const clip = await animationManager.loadVRMA(currentVrmaData);
+      await animationManager.playAnimation(clip, true);
+      
+      toggleAnimationBtn.textContent = 'Stop';
+      updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+    } else {
+      // 既に読み込まれている場合は一時停止/再開をトグル
+      const playState = animationManager.getPlayState();
+      
+      if (playState.isPlaying) {
+        animationManager.toggleAnimation();
+        toggleAnimationBtn.textContent = 'Play';
+        updateAnimationStatus('Animation paused');
+      } else {
+        animationManager.toggleAnimation();
+        toggleAnimationBtn.textContent = 'Stop';
+        updateAnimationStatus(`Playing: ${playState.clipName || 'Animation'}`);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to toggle animation:', error);
+    updateAnimationStatus(`Error: ${error instanceof Error ? error.message : 'Failed to toggle'}`);
+  } finally {
+    toggleAnimationBtn.disabled = false;
+  }
+});
+
 convertAnother.addEventListener('click', () => {
+  // Dispose VRM preview
+  if (vrmViewer) {
+    vrmViewer.dispose();
+    vrmViewer = null;
+    animationManager = null;
+  }
+  
   showSection('drop');
   currentFilePath = null;
+  currentVrmaData = null;
+  
+  // Reset controls
+  toggleAnimationBtn.disabled = true;
+  toggleAnimationBtn.textContent = 'Play';
+  updateAnimationStatus('');
 });
 
 tryAgain.addEventListener('click', () => {
@@ -195,6 +357,53 @@ tryAgain.addEventListener('click', () => {
     showSection('drop');
   }
 });
+
+// FBX2glTF Download Event Handlers
+if (window.electronAPI) {
+  // Handle download start
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadStart === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadStart(() => {
+      showSection('setup');
+      updateSetupProgress(0, 'FBX2glTFをダウンロードしています...');
+    });
+  }
+
+  // Handle download progress
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadProgress === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadProgress((progress: number) => {
+      updateSetupProgress(progress, `FBX2glTFをダウンロード中... (${progress}%)`);
+    });
+  }
+
+  // Handle download complete
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadComplete === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadComplete(() => {
+      updateSetupProgress(100, 'ダウンロード完了！');
+      setTimeout(() => {
+        showSection('drop');
+      }, 1000);
+    });
+  }
+
+  // Handle download error
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadError === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadError((error: string) => {
+      setupMessage.textContent = `ダウンロードエラー: ${error}`;
+      setupProgressText.textContent = 'エラー';
+      setTimeout(() => {
+        showSection('drop');
+      }, 3000);
+    });
+  }
+
+  // Handle FBX2glTF ready
+  if (typeof (window.electronAPI as any).onFBX2glTFReady === 'function') {
+    (window.electronAPI as any).onFBX2glTFReady(() => {
+      // FBX2glTF already exists, show normal interface
+      showSection('drop');
+    });
+  }
+}
 
 // Listen for native Electron file drop events
 if (window.electronAPI && window.electronAPI.onFileDropped) {

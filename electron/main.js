@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+const https = require('https');
 
 let mainWindow = null;
 
@@ -9,6 +10,7 @@ function createWindow() {
     width: 900,
     height: 700,
     acceptFirstMouse: true,
+    autoHideMenuBar: true, // Hide menu bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -34,6 +36,11 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Check FBX2glTF after window is loaded
+  mainWindow.webContents.once('did-finish-load', () => {
+    checkAndDownloadFBX2glTF();
   });
 
   // Handle native file drop
@@ -150,82 +157,67 @@ ipcMain.handle('write-file', async (_, filePath, data) => {
 
 // Convert glTF to VRMA format
 async function convertGltfToVrma(gltfPath) {
-  try {
-    // Read the glTF file (binary format)
-    const gltfData = await fs.readFile(gltfPath);
-    
-    // Parse binary glTF (.glb) file
-    const gltf = parseGlbFile(gltfData);
-    
-    // Debug: log the parsed glTF structure
-    console.log('Parsed glTF structure:');
-    console.log('- Nodes:', gltf.nodes ? gltf.nodes.length : 0);
-    console.log('- Animations:', gltf.animations ? gltf.animations.length : 0);
-    if (gltf.nodes && gltf.nodes.length > 0) {
-      console.log('- Sample node names:', gltf.nodes.slice(0, 5).map(n => n.name));
+  // Read the glTF file (binary format)
+  const gltfData = await fs.readFile(gltfPath);
+  
+  // Parse binary glTF (.glb) file
+  const { jsonData, binaryData } = parseGlbFileWithBinary(gltfData);
+  
+  // Debug: log the parsed glTF structure
+  console.log('Parsed glTF structure:');
+  console.log('- Nodes:', jsonData.nodes ? jsonData.nodes.length : 0);
+  console.log('- Animations:', jsonData.animations ? jsonData.animations.length : 0);
+  if (jsonData.nodes && jsonData.nodes.length > 0) {
+    console.log('- Sample node names:', jsonData.nodes.slice(0, 5).map(n => n.name));
+  }
+  
+  if (!jsonData.animations || jsonData.animations.length === 0) {
+    throw new Error('No animations found in glTF file');
+  }
+  
+  // Add VRMC_vrm_animation extension to existing glTF
+  jsonData.extensionsUsed = jsonData.extensionsUsed || [];
+  if (!jsonData.extensionsUsed.includes('VRMC_vrm_animation')) {
+    jsonData.extensionsUsed.push('VRMC_vrm_animation');
+  }
+  
+  jsonData.extensionsRequired = jsonData.extensionsRequired || [];
+  if (!jsonData.extensionsRequired.includes('VRMC_vrm_animation')) {
+    jsonData.extensionsRequired.push('VRMC_vrm_animation');
+  }
+  
+  // Create VRMC_vrm_animation extension
+  jsonData.extensions = jsonData.extensions || {};
+  jsonData.extensions.VRMC_vrm_animation = {
+    specVersion: "1.0",
+    humanoid: {
+      humanBones: {}
     }
-    
-    // Create VRMA structure
-    const vrma = {
-      asset: {
-        generator: "EasyFBX2VRMA",
-        version: "2.0"
-      },
-      extensionsUsed: ["VRMC_vrm_animation"],
-      extensionsRequired: ["VRMC_vrm_animation"],
-      extensions: {
-        VRMC_vrm_animation: {
-          specVersion: "1.0",
-          humanoid: {
-            humanBones: []
-          }
+  };
+  
+  // Map animation channels to VRM humanoid bones
+  const animation = jsonData.animations[0];
+  if (animation.channels) {
+    console.log('Processing', animation.channels.length, 'animation channels');
+    animation.channels.forEach((channel, index) => {
+      if (jsonData.nodes && jsonData.nodes[channel.target.node]) {
+        const nodeName = jsonData.nodes[channel.target.node].name || 'unnamed';
+        const boneName = mapToVrmBoneByName(jsonData, channel.target.node);
+        console.log(`Channel ${index}: node ${channel.target.node} (${nodeName}) -> ${boneName}`);
+        if (boneName) {
+          jsonData.extensions.VRMC_vrm_animation.humanoid.humanBones[boneName] = {
+            node: channel.target.node
+          };
         }
       }
-    };
-    
-    // Extract animations from glTF
-    if (gltf.animations && gltf.animations.length > 0) {
-      const animation = gltf.animations[0];
-      
-      // Map glTF animation tracks to VRM humanoid bones
-      const humanoidTracks = [];
-      
-      if (animation.channels) {
-        console.log('Processing', animation.channels.length, 'animation channels');
-        animation.channels.forEach((channel, index) => {
-          const sampler = animation.samplers[channel.sampler];
-          if (sampler) {
-            // Map bone name to VRM humanoid
-            const nodeName = gltf.nodes[channel.target.node]?.name || 'unnamed';
-            const boneName = mapToVrmBoneByName(gltf, channel.target.node);
-            console.log(`Channel ${index}: node ${channel.target.node} (${nodeName}) -> ${boneName}`);
-            if (boneName) {
-              humanoidTracks.push({
-                node: boneName,
-                sampler: channel.sampler,
-                target: channel.target
-              });
-            }
-          }
-        });
-      }
-      
-      console.log('Mapped', humanoidTracks.length, 'humanoid tracks');
-      
-      vrma.extensions.VRMC_vrm_animation.humanoid.humanBones = humanoidTracks;
-      vrma.animations = gltf.animations;
-      vrma.accessors = gltf.accessors;
-      vrma.bufferViews = gltf.bufferViews;
-      vrma.buffers = gltf.buffers;
-    }
-    
-    return Buffer.from(JSON.stringify(vrma, null, 2));
-    
-  } catch (error) {
-    console.error('glTF to VRMA conversion error:', error);
-    // Fallback: return original glTF data
-    return await fs.readFile(gltfPath);
+    });
   }
+  
+  console.log('Created VRMC_vrm_animation extension with humanoid bones:', 
+              Object.keys(jsonData.extensions.VRMC_vrm_animation.humanoid.humanBones));
+  
+  // Create new binary glTF file with updated JSON
+  return createGlbFile(jsonData, binaryData);
 }
 
 // Map glTF bone by name to VRM humanoid bone names
@@ -236,7 +228,6 @@ function mapToVrmBoneByName(gltf, nodeIndex) {
     }
     
     const nodeName = gltf.nodes[nodeIndex].name || '';
-    const lowerName = nodeName.toLowerCase();
     
     // Mixamo to VRM bone mapping (with colon syntax)
     const mixamoToVrm = {
@@ -266,15 +257,8 @@ function mapToVrmBoneByName(gltf, nodeIndex) {
     
     // Direct mapping
     if (mixamoToVrm[nodeName]) {
+      console.log(`Direct mapping: ${nodeName} -> ${mixamoToVrm[nodeName]} (node ${nodeIndex})`);
       return mixamoToVrm[nodeName];
-    }
-    
-    // Fuzzy matching for variations
-    for (const [mixamoName, vrmName] of Object.entries(mixamoToVrm)) {
-      if (lowerName.includes(mixamoName.toLowerCase()) || 
-          nodeName.includes(mixamoName)) {
-        return vrmName;
-      }
     }
     
     return null;
@@ -284,67 +268,292 @@ function mapToVrmBoneByName(gltf, nodeIndex) {
   }
 }
 
-// Parse binary glTF (.glb) file
-function parseGlbFile(buffer) {
+// Parse binary glTF (.glb) file and return both JSON and binary data
+function parseGlbFileWithBinary(buffer) {
+  console.log('GLB file size:', buffer.length, 'bytes');
+  
+  if (buffer.length < 12) {
+    throw new Error('File too small to be a valid GLB file');
+  }
+  
+  // GLB file structure:
+  // 12 byte header: magic(4) + version(4) + length(4)
+  const header = new DataView(buffer.buffer, buffer.byteOffset, 12);
+  
+  // Check magic number (should be 'glTF' = 0x46546C67)
+  const magic = header.getUint32(0, true);
+  console.log('Magic number:', magic.toString(16));
+  if (magic !== 0x46546C67) {
+    throw new Error('Invalid GLB file: wrong magic number');
+  }
+  
+  // Get version and total length
+  const version = header.getUint32(4, true);
+  const totalLength = header.getUint32(8, true);
+  console.log('GLB version:', version, 'total length:', totalLength);
+  
+  if (buffer.length < totalLength) {
+    throw new Error('File size mismatch');
+  }
+  
+  // Read first chunk (JSON)
+  let offset = 12;
+  const jsonChunkLength = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
+  offset += 4;
+  const jsonChunkType = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
+  offset += 4;
+  
+  console.log('JSON chunk length:', jsonChunkLength, 'type:', jsonChunkType.toString(16));
+  
+  // Extract JSON chunk
+  const jsonBuffer = buffer.subarray(offset, offset + jsonChunkLength);
+  const jsonString = new TextDecoder().decode(jsonBuffer);
+  offset += jsonChunkLength;
+  
+  console.log('JSON string length:', jsonString.length);
+  console.log('JSON preview:', jsonString.substring(0, 200) + '...');
+  
+  const jsonData = JSON.parse(jsonString);
+  
+  // Read binary chunk if it exists
+  let binaryData = null;
+  if (offset < totalLength) {
+    // Read binary chunk header
+    const binaryChunkLength = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
+    offset += 4;
+    const binaryChunkType = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
+    offset += 4;
+    
+    console.log('Binary chunk length:', binaryChunkLength, 'type:', binaryChunkType.toString(16));
+    
+    // Extract binary chunk
+    binaryData = buffer.subarray(offset, offset + binaryChunkLength);
+  }
+  
+  return { jsonData, binaryData };
+}
+
+// Create binary glTF (.glb) file from JSON and binary data
+function createGlbFile(jsonData, binaryData) {
+  const jsonString = JSON.stringify(jsonData);
+  const jsonBuffer = new TextEncoder().encode(jsonString);
+  
+  // Pad JSON to 4-byte boundary
+  const jsonPadding = (4 - (jsonBuffer.length % 4)) % 4;
+  const paddedJsonLength = jsonBuffer.length + jsonPadding;
+  
+  // Calculate total file size
+  const headerSize = 12;
+  const jsonChunkHeaderSize = 8;
+  let totalSize = headerSize + jsonChunkHeaderSize + paddedJsonLength;
+  
+  let binaryChunkHeaderSize = 0;
+  let paddedBinaryLength = 0;
+  
+  if (binaryData && binaryData.length > 0) {
+    binaryChunkHeaderSize = 8;
+    const binaryPadding = (4 - (binaryData.length % 4)) % 4;
+    paddedBinaryLength = binaryData.length + binaryPadding;
+    totalSize += binaryChunkHeaderSize + paddedBinaryLength;
+  }
+  
+  // Create output buffer
+  const output = new ArrayBuffer(totalSize);
+  const view = new DataView(output);
+  const bytes = new Uint8Array(output);
+  
+  let offset = 0;
+  
+  // Write GLB header
+  view.setUint32(offset, 0x46546C67, true); // magic: 'glTF'
+  offset += 4;
+  view.setUint32(offset, 2, true); // version
+  offset += 4;
+  view.setUint32(offset, totalSize, true); // total length
+  offset += 4;
+  
+  // Write JSON chunk header
+  view.setUint32(offset, paddedJsonLength, true); // chunk length
+  offset += 4;
+  view.setUint32(offset, 0x4E4F534A, true); // chunk type: 'JSON'
+  offset += 4;
+  
+  // Write JSON data
+  bytes.set(jsonBuffer, offset);
+  offset += jsonBuffer.length;
+  
+  // Add JSON padding (spaces)
+  for (let i = 0; i < jsonPadding; i++) {
+    bytes[offset++] = 0x20; // space character
+  }
+  
+  // Write binary chunk if it exists
+  if (binaryData && binaryData.length > 0) {
+    // Write binary chunk header
+    view.setUint32(offset, paddedBinaryLength, true); // chunk length
+    offset += 4;
+    view.setUint32(offset, 0x004E4942, true); // chunk type: 'BIN\0'
+    offset += 4;
+    
+    // Write binary data
+    bytes.set(binaryData, offset);
+    offset += binaryData.length;
+    
+    // Add binary padding (zeros)
+    const binaryPadding = paddedBinaryLength - binaryData.length;
+    for (let i = 0; i < binaryPadding; i++) {
+      bytes[offset++] = 0x00;
+    }
+  }
+  
+  console.log('Created GLB file with size:', totalSize, 'bytes');
+  return Buffer.from(output);
+}
+
+// FBX2glTF Download Functions
+const FBX2GLTF_VERSION = 'v0.9.7';
+const DOWNLOADS = {
+  win32: {
+    url: `https://github.com/facebookincubator/FBX2glTF/releases/download/${FBX2GLTF_VERSION}/FBX2glTF-windows-x64.exe`,
+    filename: 'FBX2glTF.exe'
+  },
+  darwin: {
+    url: `https://github.com/facebookincubator/FBX2glTF/releases/download/${FBX2GLTF_VERSION}/FBX2glTF-darwin-x64`,
+    filename: 'FBX2glTF'
+  },
+  linux: {
+    url: `https://github.com/facebookincubator/FBX2glTF/releases/download/${FBX2GLTF_VERSION}/FBX2glTF-linux-x64`,
+    filename: 'FBX2glTF'
+  }
+};
+
+function getFBX2glTFPath() {
+  const platform = process.platform;
+  const binaryName = platform === 'win32' ? 'FBX2glTF.exe' : 'FBX2glTF';
+  
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'binaries', binaryName);
+  } else {
+    return path.join(__dirname, '..', 'binaries', binaryName);
+  }
+}
+
+async function checkFBX2glTFExists() {
   try {
-    console.log('GLB file size:', buffer.length, 'bytes');
-    
-    if (buffer.length < 12) {
-      throw new Error('File too small to be a valid GLB file');
+    const binaryPath = getFBX2glTFPath();
+    await fs.access(binaryPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function downloadFile(url, dest, progressCallback) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      if (response.statusCode === 302 || response.statusCode === 301) {
+        https.get(response.headers.location, (redirectResponse) => {
+          handleDownloadResponse(redirectResponse, dest, progressCallback, resolve, reject);
+        }).on('error', reject);
+      } else {
+        handleDownloadResponse(response, dest, progressCallback, resolve, reject);
+      }
+    }).on('error', reject);
+  });
+}
+
+function handleDownloadResponse(response, dest, progressCallback, resolve, reject) {
+  const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+  let downloadedSize = 0;
+
+  const file = require('fs').createWriteStream(dest);
+
+  response.on('data', (chunk) => {
+    downloadedSize += chunk.length;
+    if (progressCallback && totalSize > 0) {
+      const progress = Math.round((downloadedSize / totalSize) * 100);
+      progressCallback(progress);
     }
-    
-    // GLB file structure:
-    // 12 byte header: magic(4) + version(4) + length(4)
-    const header = new DataView(buffer.buffer, buffer.byteOffset, 12);
-    
-    // Check magic number (should be 'glTF' = 0x46546C67)
-    const magic = header.getUint32(0, true);
-    console.log('Magic number:', magic.toString(16));
-    if (magic !== 0x46546C67) {
-      throw new Error('Invalid GLB file: wrong magic number');
-    }
-    
-    // Get version and total length
-    const version = header.getUint32(4, true);
-    const totalLength = header.getUint32(8, true);
-    console.log('GLB version:', version, 'total length:', totalLength);
-    
-    if (buffer.length < totalLength) {
-      throw new Error('File size mismatch');
-    }
-    
-    // Read first chunk (JSON)
-    let offset = 12;
-    const jsonChunkLength = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
-    offset += 4;
-    const jsonChunkType = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0, true);
-    offset += 4;
-    
-    console.log('JSON chunk length:', jsonChunkLength, 'type:', jsonChunkType.toString(16));
-    
-    // Extract JSON chunk
-    const jsonBuffer = buffer.subarray(offset, offset + jsonChunkLength);
-    const jsonString = new TextDecoder().decode(jsonBuffer);
-    
-    console.log('JSON string length:', jsonString.length);
-    console.log('JSON preview:', jsonString.substring(0, 200) + '...');
-    
-    return JSON.parse(jsonString);
+  });
+
+  response.pipe(file);
+  
+  file.on('finish', () => {
+    file.close();
+    resolve();
+  });
+
+  file.on('error', (error) => {
+    file.close();
+    reject(error);
+  });
+}
+
+async function downloadFBX2glTF(progressCallback) {
+  const platform = process.platform;
+  const download = DOWNLOADS[platform];
+  
+  if (!download) {
+    throw new Error(`Unsupported platform: ${platform}`);
+  }
+
+  const binaryPath = getFBX2glTFPath();
+  const binariesDir = path.dirname(binaryPath);
+
+  // Create binaries directory if it doesn't exist
+  try {
+    await fs.mkdir(binariesDir, { recursive: true });
   } catch (error) {
-    console.error('Failed to parse GLB file:', error);
-    // Fallback: return original glTF data as buffer for inspection
-    console.log('Attempting to save GLB file for manual inspection...');
-    
-    // Save the GLB file temporarily for inspection
-    const tempPath = require('path').join(require('os').tmpdir(), 'debug_gltf.glb');
-    require('fs').writeFileSync(tempPath, buffer);
-    console.log('GLB file saved to:', tempPath);
-    
-    return {
-      asset: { version: "2.0" },
-      animations: [],
-      nodes: []
-    };
+    // Directory already exists, continue
+  }
+
+  console.log(`Downloading FBX2glTF for ${platform}...`);
+  console.log(`URL: ${download.url}`);
+
+  await downloadFile(download.url, binaryPath, progressCallback);
+  console.log(`Downloaded to ${binaryPath}`);
+
+  // Make executable on Unix systems
+  if (platform !== 'win32') {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+    await execAsync(`chmod +x "${binaryPath}"`);
+    console.log('Made executable');
+  }
+
+  console.log('FBX2glTF installation complete!');
+}
+
+async function checkAndDownloadFBX2glTF() {
+  if (await checkFBX2glTFExists()) {
+    console.log('FBX2glTF already exists');
+    if (mainWindow) {
+      mainWindow.webContents.send('fbx2gltf-ready');
+    }
+    return;
+  }
+
+  console.log('FBX2glTF not found, starting download...');
+  if (mainWindow) {
+    mainWindow.webContents.send('fbx2gltf-download-start');
+  }
+
+  try {
+    await downloadFBX2glTF((progress) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('fbx2gltf-download-progress', progress);
+      }
+    });
+
+    if (mainWindow) {
+      mainWindow.webContents.send('fbx2gltf-download-complete');
+    }
+  } catch (error) {
+    console.error('Failed to download FBX2glTF:', error);
+    if (mainWindow) {
+      mainWindow.webContents.send('fbx2gltf-download-error', error.message);
+    }
   }
 }
 
@@ -367,7 +576,16 @@ ipcMain.handle('convert-fbx-to-vrma', async (event, fbxPath) => {
     // Step 1: Convert FBX to glTF using FBX2glTF
     const platform = process.platform;
     const binaryName = platform === 'win32' ? 'FBX2glTF.exe' : 'FBX2glTF';
-    const binaryPath = path.join(__dirname, '..', 'binaries', binaryName);
+    
+    // Determine binary path based on whether app is packaged or not
+    let binaryPath;
+    if (app.isPackaged) {
+      // In packaged app, binaries are in extraResources
+      binaryPath = path.join(process.resourcesPath, 'binaries', binaryName);
+    } else {
+      // In development, binaries are in project root
+      binaryPath = path.join(__dirname, '..', 'binaries', binaryName);
+    }
     
     // Create temp file for glTF output
     const tempId = crypto.randomBytes(8).toString('hex');

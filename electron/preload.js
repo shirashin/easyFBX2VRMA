@@ -16,4 +16,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onConversionProgress: (callback) => {
     ipcRenderer.on('conversion-progress', (_, progress) => callback(progress));
   },
+  // FBX2glTF Download Events
+  onFBX2glTFDownloadStart: (callback) => {
+    ipcRenderer.on('fbx2gltf-download-start', () => callback());
+  },
+  onFBX2glTFDownloadProgress: (callback) => {
+    ipcRenderer.on('fbx2gltf-download-progress', (_, progress) => callback(progress));
+  },
+  onFBX2glTFDownloadComplete: (callback) => {
+    ipcRenderer.on('fbx2gltf-download-complete', () => callback());
+  },
+  onFBX2glTFDownloadError: (callback) => {
+    ipcRenderer.on('fbx2gltf-download-error', (_, error) => callback(error));
+  },
+  onFBX2glTFReady: (callback) => {
+    ipcRenderer.on('fbx2gltf-ready', () => callback());
+  },
 });

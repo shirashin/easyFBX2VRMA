@@ -1,6 +1,6 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
-const path = require('path');
-const fs = require('fs').promises;
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import * as path from 'path';
+import { promises as fs } from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -58,7 +58,7 @@ ipcMain.handle('select-file', async () => {
   return null;
 });
 
-ipcMain.handle('save-file', async (_, fileName: string) => {
+ipcMain.handle('save-file', async (_: any, fileName: string) => {
   const result = await dialog.showSaveDialog({
     defaultPath: fileName,
     filters: [
@@ -73,7 +73,7 @@ ipcMain.handle('save-file', async (_, fileName: string) => {
   return null;
 });
 
-ipcMain.handle('read-file', async (_, filePath: string) => {
+ipcMain.handle('read-file', async (_: any, filePath: string) => {
   try {
     const data = await fs.readFile(filePath);
     return data;
@@ -83,7 +83,7 @@ ipcMain.handle('read-file', async (_, filePath: string) => {
   }
 });
 
-ipcMain.handle('write-file', async (_, filePath: string, data: Buffer) => {
+ipcMain.handle('write-file', async (_: any, filePath: string, data: Buffer) => {
   try {
     await fs.writeFile(filePath, data);
     return true;

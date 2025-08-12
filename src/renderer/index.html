@@ -9,6 +9,22 @@
 <body>
   <div id="app">
     <div class="container">
+      <!-- Initial Setup Section -->
+      <div id="setup-section" class="setup-section hidden">
+        <h1>FBX to VRMA Converter</h1>
+        <div class="setup-content">
+          <div class="setup-icon">⚙️</div>
+          <h2>初回セットアップ中...</h2>
+          <p id="setup-message">FBX2glTFをダウンロードしています...</p>
+          <div class="setup-progress-container">
+            <div class="setup-progress-bar">
+              <div id="setup-progress-fill" class="setup-progress-fill"></div>
+            </div>
+            <div id="setup-progress-text" class="setup-progress-text">0%</div>
+          </div>
+        </div>
+      </div>
+
       <h1>FBX to VRMA Converter</h1>
       
       <div id="drop-zone" class="drop-zone">
@@ -42,6 +58,17 @@
           <p>Conversion successful!</p>
           <p id="output-path" class="output-path"></p>
         </div>
+        
+        <!-- VRM Animation Preview Section -->
+        <div class="vrm-preview-section">
+          <h3>Animation Preview</h3>
+          <div id="vrm-viewer" class="vrm-viewer-container"></div>
+          <div class="vrm-controls">
+            <button id="toggle-animation" class="btn-control">Play</button>
+          </div>
+          <div id="animation-status" class="animation-status"></div>
+        </div>
+        
         <button id="convert-another" class="btn">Convert Another File</button>
       </div>
 

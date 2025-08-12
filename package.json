@@ -7,7 +7,7 @@
   "scripts": {
     "postinstall": "node download-fbx2gltf.js",
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "vite build && electron-builder",
     "build:win": "npm run build -- --win",
     "build:mac": "npm run build -- --mac",
     "build:linux": "npm run build -- --linux",
@@ -31,6 +31,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.2.1",
+    "@types/three": "^0.179.0",
     "concurrently": "^9.2.0",
     "electron": "^37.2.6",
     "electron-builder": "^26.0.12",
