@@ -1,16 +1,12 @@
-import https from 'https';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
+const { promisify } = require('util');
 const execAsync = promisify(exec);
 
 const BINARIES_DIR = path.join(__dirname, 'binaries');
-const FBX2GLTF_VERSION = 'v0.13.0';
+const FBX2GLTF_VERSION = 'v0.9.7';
 
 const DOWNLOADS = {
   win32: {

@@ -5,12 +5,16 @@ declare global {
       saveFile: (fileName: string) => Promise<string | null>;
       readFile: (filePath: string) => Promise<ArrayBuffer>;
       writeFile: (filePath: string, data: ArrayBuffer) => Promise<boolean>;
+      saveTempFile: (fileName: string, fileData: ArrayBuffer) => Promise<string>;
       onConvertProgress: (callback: (progress: number) => void) => void;
+      onFileDropped: (callback: (filePath: string) => void) => void;
+      convertFbxToVrma: (fbxPath: string) => Promise<ArrayBuffer>;
+      onConversionProgress: (callback: (progress: number) => void) => void;
     };
   }
 }
 
-import { convertFBXToVRMA } from '../converter/converter';
+// Converter functions will be called via IPC from main process
 
 const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
@@ -56,9 +60,9 @@ async function handleFile(filePath: string) {
     statusText.textContent = 'Processing animation data...';
     updateProgress(60);
     
-    const vrmaData = await convertFBXToVRMA(filePath, (progress) => {
-      updateProgress(30 + progress * 0.5);
-    });
+    // Convert FBX to VRMA using the actual converter
+    statusText.textContent = 'Converting FBX to VRMA...';
+    const vrmaData = await window.electronAPI.convertFbxToVrma(filePath);
     
     statusText.textContent = 'Saving VRMA file...';
     updateProgress(90);
@@ -83,9 +87,14 @@ async function handleFile(filePath: string) {
 }
 
 dropZone.addEventListener('click', async () => {
-  const filePath = await window.electronAPI.selectFile();
-  if (filePath) {
-    handleFile(filePath);
+  if (window.electronAPI) {
+    const filePath = await window.electronAPI.selectFile();
+    if (filePath) {
+      handleFile(filePath);
+    }
+  } else {
+    // Browser fallback
+    fileInput.click();
   }
 });
 
@@ -100,16 +109,66 @@ dropZone.addEventListener('dragleave', () => {
 
 dropZone.addEventListener('drop', async (e) => {
   e.preventDefault();
+  e.stopPropagation();
   dropZone.classList.remove('dragover');
   
-  const files = e.dataTransfer?.files;
-  if (files && files.length > 0) {
-    const file = files[0];
-    if (file.path && file.path.toLowerCase().endsWith('.fbx')) {
-      handleFile(file.path);
-    } else {
-      alert('Please drop an FBX file');
+  // Try to get file path from different sources
+  let filePath: string | undefined;
+  
+  // Method 1: Try webkitGetAsEntry for Electron
+  if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
+    const item = e.dataTransfer.items[0];
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) {
+        // Try multiple ways to get the path
+        filePath = (file as any).path || (file as any).filepath;
+        
+        
+        if (!filePath && file.name.toLowerCase().endsWith('.fbx')) {
+          // Try to use the webkitRelativePath or other properties
+          const fileWithPath = file as any;
+          filePath = fileWithPath.webkitRelativePath || fileWithPath.mozFullPath || fileWithPath.path;
+        }
+      }
     }
+  }
+  
+  // Method 2: Try files array
+  if (!filePath && e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+    const file = e.dataTransfer.files[0];
+    filePath = (file as any).path || (file as any).filepath;
+    
+  }
+  
+  // Handle the file
+  if (filePath && filePath.toLowerCase().endsWith('.fbx')) {
+    handleFile(filePath);
+  } else if (e.dataTransfer?.files[0]?.name.toLowerCase().endsWith('.fbx')) {
+    const file = e.dataTransfer.files[0];
+    
+    if (window.electronAPI) {
+      // Alternative approach: save file temporarily and get path
+      try {
+        // Create a temporary file path
+        const tempFileName = `temp_${Date.now()}_${file.name}`;
+        
+        // Read file as ArrayBuffer
+        const fileBuffer = await file.arrayBuffer();
+        
+        // Save file to temporary location and get path
+        const tempFilePath = await window.electronAPI.saveTempFile(file.name, fileBuffer);
+        handleFile(tempFilePath);
+      } catch (error) {
+        console.error('Error processing file:', error);
+        alert('Error processing dropped file. Please use the file selector.');
+      }
+    } else {
+      // Browser environment
+      alert('File dropped: ' + file.name + '\nNote: Please run as Electron app for full functionality.');
+    }
+  } else {
+    alert('Please drop an FBX file');
   }
 });
 
@@ -136,3 +195,17 @@ tryAgain.addEventListener('click', () => {
     showSection('drop');
   }
 });
+
+// Listen for native Electron file drop events
+if (window.electronAPI && window.electronAPI.onFileDropped) {
+  window.electronAPI.onFileDropped((filePath: string) => {
+    handleFile(filePath);
+  });
+}
+
+// Listen for conversion progress updates
+if (window.electronAPI && window.electronAPI.onConversionProgress) {
+  window.electronAPI.onConversionProgress((progress: number) => {
+    updateProgress(progress);
+  });
+}

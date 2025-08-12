@@ -83,10 +83,13 @@ npm run build:linux
 ```
 easyfbx2vrma/
 ├── src/
-│   ├── main/          # Electronメインプロセス
+│   ├── main/          # Electronメインプロセス（TypeScript）
 │   ├── renderer/      # UI（レンダラープロセス）
 │   ├── preload/       # プリロードスクリプト
 │   └── converter/     # 変換ロジック
+├── electron/          # コンパイル済みElectronファイル
+│   ├── main.js        # メインプロセス（実行ファイル）
+│   └── preload.js     # プリロードスクリプト
 ├── binaries/          # FBX2glTFバイナリ（自動ダウンロード）
 ├── assets/            # アプリケーションアイコン
 └── dist/              # ビルド出力
@@ -95,8 +98,18 @@ easyfbx2vrma/
 ## 変換フロー
 
 1. **FBX → glTF**: FBX2glTFバイナリを使用してFBXをglTF形式に変換
-2. **glTF → VRMA**: Three.jsとpixiv/three-vrm-animationを使用してVRMA形式に変換
-3. **ボーンマッピング**: Mixamoなどのボーン構造をVRM規格に自動マッピング
+2. **glTF解析**: バイナリglTF（.glb）ファイルを解析してアニメーションデータを抽出
+3. **ボーンマッピング**: Mixamoボーン（mixamorig:*）をVRM humanoidボーンに自動マッピング
+4. **VRMA生成**: VRM Animation仕様に準拠したVRMAファイルを生成
+
+## 対応ボーン
+
+現在、以下のMixamoボーンからVRMボーンへの自動マッピングに対応：
+
+- **胴体**: Hips, Spine, Spine1(Chest), Spine2(UpperChest), Neck, Head
+- **腕**: LeftShoulder/RightShoulder, LeftArm/RightArm, LeftForeArm/RightForeArm, LeftHand/RightHand
+- **脚**: LeftUpLeg/RightUpLeg, LeftLeg/RightLeg, LeftFoot/RightFoot, LeftToeBase/RightToeBase
+- **指**: 各指の関節（Thumb, Index, Middle, Ring, Pinky）
 
 ## トラブルシューティング
 
