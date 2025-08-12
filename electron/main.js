@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+const https = require('https');
 
 let mainWindow = null;
 
@@ -35,6 +36,11 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Check FBX2glTF after window is loaded
+  mainWindow.webContents.once('did-finish-load', () => {
+    checkAndDownloadFBX2glTF();
   });
 
   // Handle native file drop
@@ -402,6 +408,153 @@ function createGlbFile(jsonData, binaryData) {
   
   console.log('Created GLB file with size:', totalSize, 'bytes');
   return Buffer.from(output);
+}
+
+// FBX2glTF Download Functions
+const FBX2GLTF_VERSION = 'v0.9.7';
+const DOWNLOADS = {
+  win32: {
+    url: `https://github.com/facebookincubator/FBX2glTF/releases/download/${FBX2GLTF_VERSION}/FBX2glTF-windows-x64.exe`,
+    filename: 'FBX2glTF.exe'
+  },
+  darwin: {
+    url: `https://github.com/facebookincubator/FBX2glTF/releases/download/${FBX2GLTF_VERSION}/FBX2glTF-darwin-x64`,
+    filename: 'FBX2glTF'
+  },
+  linux: {
+    url: `https://github.com/facebookincubator/FBX2glTF/releases/download/${FBX2GLTF_VERSION}/FBX2glTF-linux-x64`,
+    filename: 'FBX2glTF'
+  }
+};
+
+function getFBX2glTFPath() {
+  const platform = process.platform;
+  const binaryName = platform === 'win32' ? 'FBX2glTF.exe' : 'FBX2glTF';
+  
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'binaries', binaryName);
+  } else {
+    return path.join(__dirname, '..', 'binaries', binaryName);
+  }
+}
+
+async function checkFBX2glTFExists() {
+  try {
+    const binaryPath = getFBX2glTFPath();
+    await fs.access(binaryPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function downloadFile(url, dest, progressCallback) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      if (response.statusCode === 302 || response.statusCode === 301) {
+        https.get(response.headers.location, (redirectResponse) => {
+          handleDownloadResponse(redirectResponse, dest, progressCallback, resolve, reject);
+        }).on('error', reject);
+      } else {
+        handleDownloadResponse(response, dest, progressCallback, resolve, reject);
+      }
+    }).on('error', reject);
+  });
+}
+
+function handleDownloadResponse(response, dest, progressCallback, resolve, reject) {
+  const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+  let downloadedSize = 0;
+
+  const file = require('fs').createWriteStream(dest);
+
+  response.on('data', (chunk) => {
+    downloadedSize += chunk.length;
+    if (progressCallback && totalSize > 0) {
+      const progress = Math.round((downloadedSize / totalSize) * 100);
+      progressCallback(progress);
+    }
+  });
+
+  response.pipe(file);
+  
+  file.on('finish', () => {
+    file.close();
+    resolve();
+  });
+
+  file.on('error', (error) => {
+    file.close();
+    reject(error);
+  });
+}
+
+async function downloadFBX2glTF(progressCallback) {
+  const platform = process.platform;
+  const download = DOWNLOADS[platform];
+  
+  if (!download) {
+    throw new Error(`Unsupported platform: ${platform}`);
+  }
+
+  const binaryPath = getFBX2glTFPath();
+  const binariesDir = path.dirname(binaryPath);
+
+  // Create binaries directory if it doesn't exist
+  try {
+    await fs.mkdir(binariesDir, { recursive: true });
+  } catch (error) {
+    // Directory already exists, continue
+  }
+
+  console.log(`Downloading FBX2glTF for ${platform}...`);
+  console.log(`URL: ${download.url}`);
+
+  await downloadFile(download.url, binaryPath, progressCallback);
+  console.log(`Downloaded to ${binaryPath}`);
+
+  // Make executable on Unix systems
+  if (platform !== 'win32') {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+    await execAsync(`chmod +x "${binaryPath}"`);
+    console.log('Made executable');
+  }
+
+  console.log('FBX2glTF installation complete!');
+}
+
+async function checkAndDownloadFBX2glTF() {
+  if (await checkFBX2glTFExists()) {
+    console.log('FBX2glTF already exists');
+    if (mainWindow) {
+      mainWindow.webContents.send('fbx2gltf-ready');
+    }
+    return;
+  }
+
+  console.log('FBX2glTF not found, starting download...');
+  if (mainWindow) {
+    mainWindow.webContents.send('fbx2gltf-download-start');
+  }
+
+  try {
+    await downloadFBX2glTF((progress) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('fbx2gltf-download-progress', progress);
+      }
+    });
+
+    if (mainWindow) {
+      mainWindow.webContents.send('fbx2gltf-download-complete');
+    }
+  } catch (error) {
+    console.error('Failed to download FBX2glTF:', error);
+    if (mainWindow) {
+      mainWindow.webContents.send('fbx2gltf-download-error', error.message);
+    }
+  }
 }
 
 // Handle FBX to VRMA conversion

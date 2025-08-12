@@ -9,6 +9,22 @@
 <body>
   <div id="app">
     <div class="container">
+      <!-- Initial Setup Section -->
+      <div id="setup-section" class="setup-section hidden">
+        <h1>FBX to VRMA Converter</h1>
+        <div class="setup-content">
+          <div class="setup-icon">⚙️</div>
+          <h2>初回セットアップ中...</h2>
+          <p id="setup-message">FBX2glTFをダウンロードしています...</p>
+          <div class="setup-progress-container">
+            <div class="setup-progress-bar">
+              <div id="setup-progress-fill" class="setup-progress-fill"></div>
+            </div>
+            <div id="setup-progress-text" class="setup-progress-text">0%</div>
+          </div>
+        </div>
+      </div>
+
       <h1>FBX to VRMA Converter</h1>
       
       <div id="drop-zone" class="drop-zone">

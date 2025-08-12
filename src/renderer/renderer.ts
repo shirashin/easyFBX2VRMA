@@ -33,6 +33,12 @@ const errorMessage = document.getElementById('error-message') as HTMLParagraphEl
 const convertAnother = document.getElementById('convert-another') as HTMLButtonElement;
 const tryAgain = document.getElementById('try-again') as HTMLButtonElement;
 
+// Setup elements
+const setupSection = document.getElementById('setup-section') as HTMLDivElement;
+const setupMessage = document.getElementById('setup-message') as HTMLParagraphElement;
+const setupProgressFill = document.getElementById('setup-progress-fill') as HTMLDivElement;
+const setupProgressText = document.getElementById('setup-progress-text') as HTMLDivElement;
+
 // VRM Preview elements
 const vrmViewerContainer = document.getElementById('vrm-viewer') as HTMLDivElement;
 const toggleAnimationBtn = document.getElementById('toggle-animation') as HTMLButtonElement;
@@ -46,7 +52,8 @@ let animationManager: VRMAnimationManager | null = null;
 // Initialize controls as disabled
 toggleAnimationBtn.disabled = true;
 
-function showSection(section: 'drop' | 'progress' | 'result' | 'error') {
+function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error') {
+  setupSection.classList.toggle('hidden', section !== 'setup');
   dropZone.classList.toggle('hidden', section !== 'drop');
   progressSection.classList.toggle('hidden', section !== 'progress');
   resultSection.classList.toggle('hidden', section !== 'result');
@@ -55,6 +62,14 @@ function showSection(section: 'drop' | 'progress' | 'result' | 'error') {
 
 function updateProgress(percent: number) {
   progressFill.style.width = `${percent}%`;
+}
+
+function updateSetupProgress(percent: number, message?: string) {
+  setupProgressFill.style.width = `${percent}%`;
+  setupProgressText.textContent = `${percent}%`;
+  if (message) {
+    setupMessage.textContent = message;
+  }
 }
 
 async function handleFile(filePath: string) {
@@ -342,6 +357,53 @@ tryAgain.addEventListener('click', () => {
     showSection('drop');
   }
 });
+
+// FBX2glTF Download Event Handlers
+if (window.electronAPI) {
+  // Handle download start
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadStart === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadStart(() => {
+      showSection('setup');
+      updateSetupProgress(0, 'FBX2glTFをダウンロードしています...');
+    });
+  }
+
+  // Handle download progress
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadProgress === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadProgress((progress: number) => {
+      updateSetupProgress(progress, `FBX2glTFをダウンロード中... (${progress}%)`);
+    });
+  }
+
+  // Handle download complete
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadComplete === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadComplete(() => {
+      updateSetupProgress(100, 'ダウンロード完了！');
+      setTimeout(() => {
+        showSection('drop');
+      }, 1000);
+    });
+  }
+
+  // Handle download error
+  if (typeof (window.electronAPI as any).onFBX2glTFDownloadError === 'function') {
+    (window.electronAPI as any).onFBX2glTFDownloadError((error: string) => {
+      setupMessage.textContent = `ダウンロードエラー: ${error}`;
+      setupProgressText.textContent = 'エラー';
+      setTimeout(() => {
+        showSection('drop');
+      }, 3000);
+    });
+  }
+
+  // Handle FBX2glTF ready
+  if (typeof (window.electronAPI as any).onFBX2glTFReady === 'function') {
+    (window.electronAPI as any).onFBX2glTFReady(() => {
+      // FBX2glTF already exists, show normal interface
+      showSection('drop');
+    });
+  }
+}
 
 // Listen for native Electron file drop events
 if (window.electronAPI && window.electronAPI.onFileDropped) {
