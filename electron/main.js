@@ -28,7 +28,8 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
     
   } else {
-    const indexPath = path.join(__dirname, '../dist/renderer/index.html');
+    // In production, load the HTML file from the same directory
+    const indexPath = path.join(__dirname, 'index.html');
     mainWindow.loadFile(indexPath);
   }
 
@@ -367,7 +368,40 @@ ipcMain.handle('convert-fbx-to-vrma', async (event, fbxPath) => {
     // Step 1: Convert FBX to glTF using FBX2glTF
     const platform = process.platform;
     const binaryName = platform === 'win32' ? 'FBX2glTF.exe' : 'FBX2glTF';
-    const binaryPath = path.join(__dirname, '..', 'binaries', binaryName);
+    
+    // In production, the binary is in resources/binaries, in development it's in binaries/
+    let binaryPath;
+    if (process.env.NODE_ENV && process.env.NODE_ENV.trim() === 'development') {
+      binaryPath = path.join(__dirname, '..', 'binaries', binaryName);
+    } else {
+      // Try multiple possible paths for the binary
+      const possiblePaths = [
+        // Regular installed version
+        path.join(process.resourcesPath, 'binaries', binaryName),
+        // Portable version - unpacked
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'binaries', binaryName),
+        // Alternative portable paths
+        path.join(path.dirname(process.execPath), 'resources', 'binaries', binaryName),
+        path.join(path.dirname(process.execPath), 'resources', 'app.asar.unpacked', 'binaries', binaryName)
+      ];
+      
+      // Find the first existing path
+      binaryPath = possiblePaths.find(p => {
+        const exists = require('fs').existsSync(p);
+        console.log(`Checking binary path: ${p} - ${exists ? 'EXISTS' : 'NOT FOUND'}`);
+        return exists;
+      });
+      
+      if (!binaryPath) {
+        console.error('FBX2glTF binary not found in any of the expected locations:', possiblePaths);
+        throw new Error('FBX2glTF binary not found');
+      }
+    }
+    
+    // Debug: Log the final binary path
+    console.log('Using binary path:', binaryPath);
+    console.log('Resources path:', process.resourcesPath);
+    console.log('Exec path:', process.execPath);
     
     // Create temp file for glTF output
     const tempId = crypto.randomBytes(8).toString('hex');

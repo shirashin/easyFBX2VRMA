@@ -1,12 +1,13 @@
 appId: com.easyfbx2vrma.app
 productName: EasyFBX2VRMA
 directories:
-  output: out
+  output: dist
   buildResources: assets
 
 files:
-  - dist/**/*
+  - electron/**/*
   - binaries/**/*
+  - assets/**/*
   - node_modules/**/*
   - package.json
 
@@ -16,11 +17,16 @@ extraResources:
     filter:
       - "**/*"
 
+# Skip signing for external binaries
+asarUnpack:
+  - "**/binaries/**/*"
+  - "binaries/**/*"
+
 win:
   target:
-    - nsis
     - portable
-  icon: assets/icon.ico
+  forceCodeSigning: false
+  signAndEditExecutable: false
 
 mac:
   target:
@@ -40,8 +46,6 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
-  installerIcon: assets/icon.ico
-  uninstallerIcon: assets/icon.ico
 
 dmg:
   contents:
