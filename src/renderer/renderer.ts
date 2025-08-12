@@ -1,3 +1,7 @@
+import { VRMViewer } from './components/VRMViewer.js';
+import { VRMAnimationManager } from './components/VRMAnimationManager.js';
+import Character02VrmUrl from './assets/models/Character02.vrm?url';
+
 declare global {
   interface Window {
     electronAPI: {
@@ -29,7 +33,22 @@ const errorMessage = document.getElementById('error-message') as HTMLParagraphEl
 const convertAnother = document.getElementById('convert-another') as HTMLButtonElement;
 const tryAgain = document.getElementById('try-again') as HTMLButtonElement;
 
+// VRM Preview elements
+const vrmViewerContainer = document.getElementById('vrm-viewer') as HTMLDivElement;
+const playAnimationBtn = document.getElementById('play-animation') as HTMLButtonElement;
+const stopAnimationBtn = document.getElementById('stop-animation') as HTMLButtonElement;
+const resetAnimationBtn = document.getElementById('reset-animation') as HTMLButtonElement;
+const animationStatus = document.getElementById('animation-status') as HTMLDivElement;
+
 let currentFilePath: string | null = null;
+let currentVrmaData: ArrayBuffer | null = null;
+let vrmViewer: VRMViewer | null = null;
+let animationManager: VRMAnimationManager | null = null;
+
+// Initialize controls as disabled
+playAnimationBtn.disabled = true;
+stopAnimationBtn.disabled = true;
+resetAnimationBtn.disabled = true;
 
 function showSection(section: 'drop' | 'progress' | 'result' | 'error') {
   dropZone.classList.toggle('hidden', section !== 'drop');
@@ -75,6 +94,13 @@ async function handleFile(filePath: string) {
       updateProgress(100);
       
       outputPath.textContent = `Saved to: ${savePath}`;
+      
+      // Store VRMA data for preview
+      currentVrmaData = vrmaData;
+      
+      // Initialize VRM preview
+      await initializeVRMPreview();
+      
       showSection('result');
     } else {
       throw new Error('Save cancelled');
@@ -177,15 +203,126 @@ fileInput.addEventListener('change', async (e) => {
   const files = target.files;
   if (files && files.length > 0) {
     const file = files[0];
-    if (file.path) {
-      handleFile(file.path);
+    const filePath = (file as any).path;
+    if (filePath) {
+      handleFile(filePath);
     }
   }
 });
 
+// VRM Preview Functions
+async function initializeVRMPreview(): Promise<void> {
+  try {
+    // Dispose existing viewer
+    if (vrmViewer) {
+      vrmViewer.dispose();
+      vrmViewer = null;
+      animationManager = null;
+    }
+
+    // Clear container
+    vrmViewerContainer.innerHTML = '';
+    vrmViewerContainer.classList.remove('loaded');
+
+    // Initialize VRM viewer
+    vrmViewer = new VRMViewer(vrmViewerContainer, {
+      background: 0x212121,
+      cameraPosition: { x: 0, y: 1.3, z: -3 },
+      cameraTarget: { x: 0, y: 1, z: 0 },
+      enableShadows: true,
+      enableOrbitControls: true,
+      enableGround: true,
+    });
+
+    await vrmViewer.initialize();
+
+    // Load VRM model
+    const vrm = await vrmViewer.loadVRM(Character02VrmUrl);
+    const mixer = vrmViewer.getMixer();
+
+    if (mixer) {
+      animationManager = new VRMAnimationManager(vrm, mixer);
+    }
+
+    vrmViewerContainer.classList.add('loaded');
+    updateAnimationStatus('VRM model loaded. Ready to preview animation.');
+
+    // Enable controls
+    playAnimationBtn.disabled = false;
+    stopAnimationBtn.disabled = false;
+    resetAnimationBtn.disabled = false;
+
+    console.log('VRM preview initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize VRM preview:', error);
+    updateAnimationStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+function updateAnimationStatus(message: string): void {
+  animationStatus.textContent = message;
+}
+
+// VRM Animation Control Event Listeners
+playAnimationBtn.addEventListener('click', async () => {
+  if (!animationManager || !currentVrmaData) {
+    updateAnimationStatus('No animation data available');
+    return;
+  }
+
+  try {
+    playAnimationBtn.disabled = true;
+    updateAnimationStatus('Loading animation...');
+
+    const clip = await animationManager.loadVRMA(currentVrmaData);
+    await animationManager.playAnimation(clip, true);
+
+    updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+  } catch (error) {
+    console.error('Failed to play animation:', error);
+    updateAnimationStatus(`Error: ${error instanceof Error ? error.message : 'Failed to play'}`);
+  } finally {
+    playAnimationBtn.disabled = false;
+  }
+});
+
+stopAnimationBtn.addEventListener('click', () => {
+  if (!animationManager) {
+    updateAnimationStatus('No animation manager available');
+    return;
+  }
+
+  animationManager.stopAnimation();
+  updateAnimationStatus('Animation stopped');
+});
+
+resetAnimationBtn.addEventListener('click', () => {
+  if (!animationManager) {
+    updateAnimationStatus('No animation manager available');
+    return;
+  }
+
+  animationManager.resetPose();
+  updateAnimationStatus('Pose reset to T-pose');
+});
+
 convertAnother.addEventListener('click', () => {
+  // Dispose VRM preview
+  if (vrmViewer) {
+    vrmViewer.dispose();
+    vrmViewer = null;
+    animationManager = null;
+  }
+  
   showSection('drop');
   currentFilePath = null;
+  currentVrmaData = null;
+  
+  // Reset controls
+  playAnimationBtn.disabled = true;
+  stopAnimationBtn.disabled = true;
+  resetAnimationBtn.disabled = true;
+  updateAnimationStatus('');
 });
 
 tryAgain.addEventListener('click', () => {

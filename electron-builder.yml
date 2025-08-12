@@ -6,6 +6,7 @@ directories:
 
 files:
   - dist/**/*
+  - electron/**/*
   - binaries/**/*
   - node_modules/**/*
   - package.json
@@ -21,6 +22,8 @@ win:
     - nsis
     - portable
   icon: assets/icon.ico
+  forceCodeSigning: false
+  signExts: []
 
 mac:
   target:

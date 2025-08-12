@@ -1,16 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": false,
     "jsx": "preserve",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "allowJs": true,
-    "noEmit": true,
+    "noEmit": false,
+    "outDir": "dist",
     "isolatedModules": true,
     "lib": ["ES2022", "DOM"],
     "types": ["vite/client", "node"]

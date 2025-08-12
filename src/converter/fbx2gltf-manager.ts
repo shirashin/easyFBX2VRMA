@@ -2,12 +2,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
-import { fileURLToPath } from 'url';
 import { app } from 'electron';
 
 const execAsync = promisify(exec);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export class FBX2glTFManager {
   private binaryPath: string;
@@ -19,7 +16,7 @@ export class FBX2glTFManager {
     if (app.isPackaged) {
       this.binaryPath = path.join(process.resourcesPath, 'binaries', binaryName);
     } else {
-      this.binaryPath = path.join(__dirname, '../../binaries', binaryName);
+      this.binaryPath = path.join(__dirname, '../../../binaries', binaryName);
     }
   }
 
