@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EasyFBX2VRMA Converter</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app">
+    <div class="container">
+      <h1>FBX to VRMA Converter</h1>
+      
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-zone-content">
+          <svg class="icon" viewBox="0 0 24 24" width="64" height="64">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
+          </svg>
+          <p class="drop-text">Drag and drop FBX file here</p>
+          <p class="drop-subtext">or click to browse</p>
+          <input type="file" id="file-input" accept=".fbx" hidden>
+        </div>
+      </div>
+
+      <div id="progress-section" class="progress-section hidden">
+        <div class="file-info">
+          <span id="file-name"></span>
+        </div>
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div class="progress-status">
+          <span id="status-text">Processing...</span>
+        </div>
+      </div>
+
+      <div id="result-section" class="result-section hidden">
+        <div class="success-message">
+          <svg class="icon success" viewBox="0 0 24 24" width="48" height="48">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
+          </svg>
+          <p>Conversion successful!</p>
+          <p id="output-path" class="output-path"></p>
+        </div>
+        <button id="convert-another" class="btn">Convert Another File</button>
+      </div>
+
+      <div id="error-section" class="error-section hidden">
+        <div class="error-message">
+          <svg class="icon error" viewBox="0 0 24 24" width="48" height="48">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+          </svg>
+          <p>Conversion failed</p>
+          <p id="error-message" class="error-detail"></p>
+        </div>
+        <button id="try-again" class="btn">Try Again</button>
+      </div>
+    </div>
+  </div>
+  
+  <script type="module" src="./renderer.ts"></script>
+</body>
+</html>

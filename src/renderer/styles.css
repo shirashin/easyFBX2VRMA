@@ -1,0 +1,173 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+}
+
+.container {
+  background: white;
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 500px;
+  width: 100%;
+  margin: 20px;
+}
+
+h1 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 30px;
+  font-size: 24px;
+}
+
+.drop-zone {
+  border: 3px dashed #ccc;
+  border-radius: 15px;
+  padding: 60px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #fafafa;
+}
+
+.drop-zone:hover {
+  border-color: #667eea;
+  background: #f5f5ff;
+}
+
+.drop-zone.dragover {
+  border-color: #667eea;
+  background: #f0f0ff;
+  transform: scale(1.02);
+}
+
+.drop-zone-content {
+  pointer-events: none;
+}
+
+.icon {
+  color: #667eea;
+  margin-bottom: 20px;
+}
+
+.drop-text {
+  font-size: 18px;
+  color: #555;
+  margin-bottom: 10px;
+}
+
+.drop-subtext {
+  font-size: 14px;
+  color: #999;
+}
+
+.progress-section {
+  margin-top: 30px;
+}
+
+.file-info {
+  margin-bottom: 15px;
+  font-size: 14px;
+  color: #666;
+}
+
+.progress-bar {
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 10px;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.progress-status {
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+}
+
+.result-section,
+.error-section {
+  margin-top: 30px;
+  text-align: center;
+}
+
+.success-message,
+.error-message {
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+
+.success-message {
+  background: #f0fff4;
+  color: #22c55e;
+}
+
+.error-message {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.icon.success {
+  color: #22c55e;
+}
+
+.icon.error {
+  color: #ef4444;
+}
+
+.output-path {
+  font-size: 12px;
+  color: #666;
+  margin-top: 10px;
+  word-break: break-all;
+}
+
+.error-detail {
+  font-size: 14px;
+  color: #666;
+  margin-top: 10px;
+}
+
+.btn {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.hidden {
+  display: none;
+}

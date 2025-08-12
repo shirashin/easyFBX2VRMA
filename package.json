@@ -1,0 +1,36 @@
+{
+  "name": "easyfbx2vrma",
+  "version": "1.0.0",
+  "description": "Easy FBX to VRMA converter with drag and drop support",
+  "main": "dist/main/main.js",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node download-fbx2gltf.js",
+    "dev": "vite",
+    "build": "tsc && vite build && electron-builder",
+    "build:win": "npm run build -- --win",
+    "build:mac": "npm run build -- --mac",
+    "build:linux": "npm run build -- --linux",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "NODE_ENV=development electron .",
+    "compile": "tsc",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": ["fbx", "vrma", "converter", "3d", "animation"],
+  "author": "EasyFBX2VRMA",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.1"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.4.2",
+    "@pixiv/three-vrm-animation": "^3.4.2",
+    "three": "^0.179.1"
+  }
+}
