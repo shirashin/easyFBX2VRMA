@@ -32,9 +32,9 @@
           <svg class="icon" viewBox="0 0 24 24" width="64" height="64">
             <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
           </svg>
-          <p class="drop-text">Drag and drop FBX file here</p>
+          <p class="drop-text">Drag and drop FBX files here (1-30 files)</p>
           <p class="drop-subtext">or click to browse</p>
-          <input type="file" id="file-input" accept=".fbx" hidden>
+          <input type="file" id="file-input" accept=".fbx" multiple hidden>
         </div>
       </div>
 
@@ -50,6 +50,26 @@
         </div>
       </div>
 
+      <!-- Batch Conversion Progress Section -->
+      <div id="batch-progress-section" class="batch-progress-section hidden">
+        <h3>Batch Conversion Progress</h3>
+        <div class="batch-info">
+          <span id="batch-file-count">0/0 files processed</span>
+        </div>
+        <div class="progress-bar">
+          <div id="batch-progress-fill" class="progress-fill"></div>
+        </div>
+        <div class="progress-status">
+          <span id="batch-status-text">Preparing batch conversion...</span>
+        </div>
+      </div>
+
+      <!-- Conversion Log Section -->
+      <div id="log-section" class="log-section hidden">
+        <h3>Conversion Log</h3>
+        <div id="conversion-log" class="conversion-log"></div>
+      </div>
+
       <div id="result-section" class="result-section hidden">
         <div class="success-message">
           <svg class="icon success" viewBox="0 0 24 24" width="48" height="48">
@@ -62,6 +82,13 @@
         <!-- VRM Animation Preview Section -->
         <div class="vrm-preview-section">
           <h3>Animation Preview</h3>
+          
+          <!-- File Selector for Multiple Animations -->
+          <div id="file-selector" class="file-selector hidden">
+            <h4>Select Animation:</h4>
+            <div id="file-buttons" class="file-buttons"></div>
+          </div>
+          
           <div id="vrm-viewer" class="vrm-viewer-container"></div>
           <div class="vrm-controls">
             <button id="toggle-animation" class="btn-control">Play</button>

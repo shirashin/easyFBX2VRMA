@@ -41,6 +41,8 @@
   "dependencies": {
     "@pixiv/three-vrm": "^3.4.2",
     "@pixiv/three-vrm-animation": "^3.4.2",
+    "core-util-is": "^1.0.3",
+    "jszip": "^3.10.1",
     "three": "^0.179.1"
   }
 }

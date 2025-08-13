@@ -1,0 +1,12 @@
+{
+  "batchConversion": {
+    "maxFiles": 30
+  },
+  "ui": {
+    "language": "ja"
+  },
+  "conversion": {
+    "outputQuality": "high",
+    "defaultOutputDirectory": ""
+  }
+}

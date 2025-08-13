@@ -23,6 +23,9 @@ export class VRMAnimationManager {
    * VRMAファイルを読み込む
    */
   async loadVRMA(vrmaUrl: string | ArrayBuffer): Promise<THREE.AnimationClip> {
+    // 既存のアニメーションを停止
+    this.stopAnimation();
+    
     let gltf;
     
     if (typeof vrmaUrl === 'string') {
@@ -66,12 +69,20 @@ export class VRMAnimationManager {
       const clip = createVRMAnimationClip(vrmAnimation, this.vrm);
       this.currentClip = clip;
       console.log('VRMA animation loaded successfully:', clip);
+      
+      // 新しいアニメーションを自動再生
+      await this.playAnimation(clip);
+      
       return clip;
     } else {
       // 標準のglTFアニメーションとして処理
       const clip = gltf.animations[0];
       this.currentClip = clip;
       console.log('Standard glTF animation loaded:', clip);
+      
+      // 新しいアニメーションを自動再生
+      await this.playAnimation(clip);
+      
       return clip;
     }
   }

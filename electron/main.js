@@ -86,7 +86,7 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('select-file', async () => {
   const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'FBX Files', extensions: ['fbx'] },
       { name: 'All Files', extensions: ['*'] },
@@ -94,9 +94,37 @@ ipcMain.handle('select-file', async () => {
   });
   
   if (!result.canceled && result.filePaths.length > 0) {
+    // Return single file path for backward compatibility
     return result.filePaths[0];
   }
   return null;
+});
+
+// Load application configuration
+ipcMain.handle('load-config', async () => {
+  try {
+    const configPath = app.isPackaged 
+      ? path.join(process.resourcesPath, 'config.json')
+      : path.join(__dirname, '..', 'config.json');
+    
+    const configData = await fs.readFile(configPath, 'utf8');
+    return JSON.parse(configData);
+  } catch (error) {
+    console.warn('Could not load config.json:', error);
+    // Return default configuration
+    return {
+      batchConversion: {
+        maxFiles: 30
+      },
+      ui: {
+        language: 'ja'
+      },
+      conversion: {
+        outputQuality: 'high',
+        defaultOutputDirectory: ''
+      }
+    };
+  }
 });
 
 // Handle file drop via IPC - save temporary file

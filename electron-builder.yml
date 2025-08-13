@@ -9,6 +9,7 @@ files:
   - electron/**/*
   - node_modules/**/*
   - package.json
+  - config.json
 
 win:
   target:

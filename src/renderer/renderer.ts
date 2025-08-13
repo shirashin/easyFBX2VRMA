@@ -13,6 +13,7 @@ declare global {
       onConvertProgress: (callback: (progress: number) => void) => void;
       onFileDropped: (callback: (filePath: string) => void) => void;
       convertFbxToVrma: (fbxPath: string) => Promise<ArrayBuffer>;
+      loadConfig: () => Promise<any>;
       onConversionProgress: (callback: (progress: number) => void) => void;
     };
   }
@@ -44,18 +45,40 @@ const vrmViewerContainer = document.getElementById('vrm-viewer') as HTMLDivEleme
 const toggleAnimationBtn = document.getElementById('toggle-animation') as HTMLButtonElement;
 const animationStatus = document.getElementById('animation-status') as HTMLDivElement;
 
+// Batch conversion elements
+const batchProgressSection = document.getElementById('batch-progress-section') as HTMLDivElement;
+const batchFileCount = document.getElementById('batch-file-count') as HTMLSpanElement;
+const batchProgressFill = document.getElementById('batch-progress-fill') as HTMLDivElement;
+const batchStatusText = document.getElementById('batch-status-text') as HTMLSpanElement;
+
+// Log elements
+const logSection = document.getElementById('log-section') as HTMLDivElement;
+const conversionLog = document.getElementById('conversion-log') as HTMLDivElement;
+
+// File selector elements
+const fileSelector = document.getElementById('file-selector') as HTMLDivElement;
+const fileButtons = document.getElementById('file-buttons') as HTMLDivElement;
+
 let currentFilePath: string | null = null;
 let currentVrmaData: ArrayBuffer | null = null;
 let vrmViewer: VRMViewer | null = null;
 let animationManager: VRMAnimationManager | null = null;
 
+// Batch conversion state
+let batchConversionFiles: string[] = [];
+let convertedFiles: {name: string, data: ArrayBuffer}[] = [];
+let currentBatchIndex = 0;
+let maxFilesLimit = 30;
+
 // Initialize controls as disabled
 toggleAnimationBtn.disabled = true;
 
-function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error') {
+function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error' | 'batch') {
   setupSection.classList.toggle('hidden', section !== 'setup');
   dropZone.classList.toggle('hidden', section !== 'drop');
   progressSection.classList.toggle('hidden', section !== 'progress');
+  batchProgressSection.classList.toggle('hidden', section !== 'batch');
+  logSection.classList.toggle('hidden', section !== 'batch');
   resultSection.classList.toggle('hidden', section !== 'result');
   errorSection.classList.toggle('hidden', section !== 'error');
 }
@@ -69,6 +92,108 @@ function updateSetupProgress(percent: number, message?: string) {
   setupProgressText.textContent = `${percent}%`;
   if (message) {
     setupMessage.textContent = message;
+  }
+}
+
+// Batch conversion helper functions
+function updateBatchProgress(current: number, total: number) {
+  const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+  batchProgressFill.style.width = `${percent}%`;
+  batchFileCount.textContent = `${current}/${total} files processed`;
+}
+
+function addLogEntry(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = document.createElement('div');
+  logEntry.className = `log-entry ${type}`;
+  logEntry.textContent = `[${timestamp}] ${message}`;
+  conversionLog.appendChild(logEntry);
+  
+  // Auto-scroll to bottom
+  conversionLog.scrollTop = conversionLog.scrollHeight;
+}
+
+async function loadConfig(): Promise<any> {
+  try {
+    if (window.electronAPI && window.electronAPI.loadConfig) {
+      const config = await window.electronAPI.loadConfig();
+      maxFilesLimit = config.batchConversion?.maxFiles || 30;
+      return config;
+    } else {
+      console.warn('electronAPI.loadConfig not available, using defaults');
+      return { batchConversion: { maxFiles: 30 } };
+    }
+  } catch (error) {
+    console.warn('Could not load config.json, using defaults:', error);
+    return { batchConversion: { maxFiles: 30 } };
+  }
+}
+
+function validateFileCount(files: FileList | File[] | string[]): boolean {
+  if (files.length > maxFilesLimit) {
+    alert(`最大${maxFilesLimit}ファイルまで対応しています。選択されたファイル数: ${files.length}`);
+    return false;
+  }
+  return true;
+}
+
+function getFileNameWithoutExtension(fileName: string): string {
+  return fileName.replace(/\.[^/.]+$/, '');
+}
+
+function updateFileSelector() {
+  if (convertedFiles.length <= 1) {
+    fileSelector.classList.add('hidden');
+    return;
+  }
+  
+  fileSelector.classList.remove('hidden');
+  fileButtons.innerHTML = '';
+  
+  convertedFiles.forEach((file, index) => {
+    const button = document.createElement('button');
+    button.className = 'file-button';
+    button.textContent = getFileNameWithoutExtension(file.name);
+    button.onclick = () => switchToAnimation(index);
+    
+    if (index === 0) {
+      button.classList.add('active');
+    }
+    
+    fileButtons.appendChild(button);
+  });
+}
+
+async function switchToAnimation(index: number) {
+  if (index < 0 || index >= convertedFiles.length) return;
+  
+  // Update active button
+  const buttons = fileButtons.querySelectorAll('.file-button');
+  buttons.forEach((btn, i) => {
+    btn.classList.toggle('active', i === index);
+  });
+  
+  // Load selected animation
+  const selectedFile = convertedFiles[index];
+  currentVrmaData = selectedFile.data;
+  
+  if (vrmViewer && animationManager) {
+    try {
+      updateAnimationStatus(`Loading: ${getFileNameWithoutExtension(selectedFile.name)}...`);
+      
+      // Load and automatically play the new animation
+      const clip = await animationManager.loadVRMA(selectedFile.data);
+      
+      // Update UI to reflect playing state
+      toggleAnimationBtn.textContent = 'Stop';
+      toggleAnimationBtn.disabled = false;
+      updateAnimationStatus(`Playing: ${getFileNameWithoutExtension(selectedFile.name)} (${clip.duration.toFixed(1)}s)`);
+      
+      console.log(`Switched to animation: ${selectedFile.name}`);
+    } catch (error) {
+      console.error('Error switching animation:', error);
+      updateAnimationStatus(`Error loading: ${getFileNameWithoutExtension(selectedFile.name)}`);
+    }
   }
 }
 
@@ -123,6 +248,112 @@ async function handleFile(filePath: string) {
   }
 }
 
+// Batch conversion handler
+async function handleBatchFiles(filePaths: string[]) {
+  if (!validateFileCount(filePaths)) {
+    return;
+  }
+  
+  batchConversionFiles = [...filePaths];
+  convertedFiles = [];
+  currentBatchIndex = 0;
+  
+  showSection('batch');
+  addLogEntry(`一括変換開始: ${filePaths.length}ファイル`, 'info');
+  
+  batchStatusText.textContent = '一括変換中...';
+  updateBatchProgress(0, filePaths.length);
+  
+  for (let i = 0; i < filePaths.length; i++) {
+    const filePath = filePaths[i];
+    const fileName = filePath.split(/[\\/]/).pop() || `File${i + 1}`;
+    
+    try {
+      addLogEntry(`${fileName} 変換開始`, 'info');
+      batchStatusText.textContent = `Converting: ${fileName}`;
+      
+      // Convert FBX to VRMA
+      const vrmaData = await window.electronAPI.convertFbxToVrma(filePath);
+      
+      // Store converted data
+      convertedFiles.push({
+        name: fileName,
+        data: vrmaData
+      });
+      
+      addLogEntry(`${fileName} 変換完了`, 'success');
+      updateBatchProgress(i + 1, filePaths.length);
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      addLogEntry(`${fileName} エラー: ${errorMsg}`, 'error');
+      console.error(`Error converting ${fileName}:`, error);
+      
+      // Continue with next file even if current one failed
+      updateBatchProgress(i + 1, filePaths.length);
+    }
+  }
+  
+  // Save all converted files to ZIP
+  if (convertedFiles.length > 0) {
+    await saveBatchAsZip();
+    
+    // Initialize VRM preview with first file
+    currentVrmaData = convertedFiles[0].data;
+    await initializeVRMPreview();
+    updateFileSelector();
+    
+    batchStatusText.textContent = `完了: ${convertedFiles.length}/${filePaths.length}ファイル変換成功`;
+    addLogEntry(`一括変換完了: ${convertedFiles.length}/${filePaths.length}ファイル成功`, 'success');
+    
+    showSection('result');
+  } else {
+    addLogEntry('すべてのファイルの変換に失敗しました', 'error');
+    errorMessage.textContent = 'すべてのファイルの変換に失敗しました';
+    showSection('error');
+  }
+}
+
+// Save batch converted files as ZIP
+async function saveBatchAsZip() {
+  try {
+    // Import JSZip dynamically
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+    
+    // Add each converted file to ZIP
+    convertedFiles.forEach(file => {
+      const baseName = getFileNameWithoutExtension(file.name);
+      zip.file(`${baseName}.vrma`, file.data);
+    });
+    
+    // Generate ZIP content
+    const zipContent = await zip.generateAsync({ type: 'uint8array' });
+    
+    // Save ZIP file
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+    const zipFileName = `converted_animations_${timestamp}.zip`;
+    const savePath = await window.electronAPI.saveFile(zipFileName);
+    
+    if (savePath) {
+      // Convert Uint8Array to ArrayBuffer safely
+      const arrayBuffer = new ArrayBuffer(zipContent.byteLength);
+      const view = new Uint8Array(arrayBuffer);
+      view.set(zipContent);
+      await window.electronAPI.writeFile(savePath, arrayBuffer);
+      outputPath.textContent = `Saved to: ${savePath}`;
+      addLogEntry(`ZIPファイル保存完了: ${savePath}`, 'success');
+    } else {
+      throw new Error('ZIP保存がキャンセルされました');
+    }
+    
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'ZIP生成エラー';
+    addLogEntry(`ZIP保存エラー: ${errorMsg}`, 'error');
+    throw error;
+  }
+}
+
 dropZone.addEventListener('click', async () => {
   if (window.electronAPI) {
     const filePath = await window.electronAPI.selectFile();
@@ -149,76 +380,96 @@ dropZone.addEventListener('drop', async (e) => {
   e.stopPropagation();
   dropZone.classList.remove('dragover');
   
-  // Try to get file path from different sources
-  let filePath: string | undefined;
-  
-  // Method 1: Try webkitGetAsEntry for Electron
-  if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
-    const item = e.dataTransfer.items[0];
-    if (item.kind === 'file') {
-      const file = item.getAsFile();
-      if (file) {
-        // Try multiple ways to get the path
-        filePath = (file as any).path || (file as any).filepath;
-        
-        
-        if (!filePath && file.name.toLowerCase().endsWith('.fbx')) {
-          // Try to use the webkitRelativePath or other properties
-          const fileWithPath = file as any;
-          filePath = fileWithPath.webkitRelativePath || fileWithPath.mozFullPath || fileWithPath.path;
-        }
-      }
-    }
+  if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0) {
+    alert('ファイルが見つかりません');
+    return;
   }
   
-  // Method 2: Try files array
-  if (!filePath && e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-    const file = e.dataTransfer.files[0];
-    filePath = (file as any).path || (file as any).filepath;
-    
+  // Filter only FBX files
+  const files = Array.from(e.dataTransfer.files);
+  const fbxFiles = files.filter(file => file.name.toLowerCase().endsWith('.fbx'));
+  
+  if (fbxFiles.length === 0) {
+    alert('FBXファイルをドロップしてください');
+    return;
   }
   
-  // Handle the file
-  if (filePath && filePath.toLowerCase().endsWith('.fbx')) {
-    handleFile(filePath);
-  } else if (e.dataTransfer?.files[0]?.name.toLowerCase().endsWith('.fbx')) {
-    const file = e.dataTransfer.files[0];
+  // Get file paths for all FBX files
+  const filePaths: string[] = [];
+  
+  for (const file of fbxFiles) {
+    let filePath: string | undefined = (file as any).path || (file as any).filepath;
     
-    if (window.electronAPI) {
-      // Alternative approach: save file temporarily and get path
+    if (!filePath && window.electronAPI) {
+      // Fallback: save file temporarily and get path
       try {
-        // Create a temporary file path
-        const tempFileName = `temp_${Date.now()}_${file.name}`;
-        
-        // Read file as ArrayBuffer
         const fileBuffer = await file.arrayBuffer();
-        
-        // Save file to temporary location and get path
         const tempFilePath = await window.electronAPI.saveTempFile(file.name, fileBuffer);
-        handleFile(tempFilePath);
+        filePath = tempFilePath;
       } catch (error) {
-        console.error('Error processing file:', error);
-        alert('Error processing dropped file. Please use the file selector.');
+        console.error('Error processing file:', file.name, error);
+        continue;
       }
-    } else {
-      // Browser environment
-      alert('File dropped: ' + file.name + '\nNote: Please run as Electron app for full functionality.');
     }
+    
+    if (filePath) {
+      filePaths.push(filePath);
+    }
+  }
+  
+  if (filePaths.length === 0) {
+    alert('ファイルパスの取得に失敗しました');
+    return;
+  }
+  
+  // Handle single or multiple files
+  if (filePaths.length === 1) {
+    handleFile(filePaths[0]);
   } else {
-    alert('Please drop an FBX file');
+    handleBatchFiles(filePaths);
   }
 });
 
 fileInput.addEventListener('change', async (e) => {
   const target = e.target as HTMLInputElement;
   const files = target.files;
-  if (files && files.length > 0) {
-    const file = files[0];
+  
+  if (!files || files.length === 0) {
+    return;
+  }
+  
+  // Filter only FBX files
+  const fbxFiles = Array.from(files).filter(file => file.name.toLowerCase().endsWith('.fbx'));
+  
+  if (fbxFiles.length === 0) {
+    alert('FBXファイルを選択してください');
+    return;
+  }
+  
+  // Get file paths
+  const filePaths: string[] = [];
+  
+  for (const file of fbxFiles) {
     const filePath = (file as any).path;
     if (filePath) {
-      handleFile(filePath);
+      filePaths.push(filePath);
     }
   }
+  
+  if (filePaths.length === 0) {
+    alert('ファイルパスの取得に失敗しました');
+    return;
+  }
+  
+  // Handle single or multiple files
+  if (filePaths.length === 1) {
+    handleFile(filePaths[0]);
+  } else {
+    handleBatchFiles(filePaths);
+  }
+  
+  // Reset file input
+  target.value = '';
 });
 
 // VRM Preview Functions
@@ -340,9 +591,18 @@ convertAnother.addEventListener('click', () => {
     animationManager = null;
   }
   
-  showSection('drop');
+  // Reset all state
   currentFilePath = null;
   currentVrmaData = null;
+  batchConversionFiles = [];
+  convertedFiles = [];
+  currentBatchIndex = 0;
+  
+  // Reset UI
+  showSection('drop');
+  fileSelector.classList.add('hidden');
+  fileButtons.innerHTML = '';
+  conversionLog.innerHTML = '';
   
   // Reset controls
   toggleAnimationBtn.disabled = true;
@@ -418,3 +678,21 @@ if (window.electronAPI && window.electronAPI.onConversionProgress) {
     updateProgress(progress);
   });
 }
+
+// Initialize application
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    // Load configuration
+    await loadConfig();
+    
+    // Update UI with loaded config
+    const dropText = document.querySelector('.drop-text');
+    if (dropText) {
+      dropText.textContent = `Drag and drop FBX files here (1-${maxFilesLimit} files)`;
+    }
+    
+    console.log(`Application initialized. Max files limit: ${maxFilesLimit}`);
+  } catch (error) {
+    console.error('Initialization error:', error);
+  }
+});
