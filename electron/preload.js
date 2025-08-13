@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('file-dropped', (_, filePath) => callback(filePath));
   },
   convertFbxToVrma: (fbxPath) => ipcRenderer.invoke('convert-fbx-to-vrma', fbxPath),
+  loadConfig: () => ipcRenderer.invoke('load-config'),
   onConversionProgress: (callback) => {
     ipcRenderer.on('conversion-progress', (_, progress) => callback(progress));
   },

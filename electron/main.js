@@ -7,10 +7,12 @@ let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 1470,
+    height: 870,
+    resizable: false, // Fixed window size
     acceptFirstMouse: true,
     autoHideMenuBar: true, // Hide menu bar
+    center: true, // Center window on screen
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -86,17 +88,46 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('select-file', async () => {
   const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [
+      { name: 'VRM Files', extensions: ['vrm'] },
       { name: 'FBX Files', extensions: ['fbx'] },
       { name: 'All Files', extensions: ['*'] },
     ],
   });
   
   if (!result.canceled && result.filePaths.length > 0) {
+    // Return single file path for backward compatibility
     return result.filePaths[0];
   }
   return null;
+});
+
+// Load application configuration
+ipcMain.handle('load-config', async () => {
+  try {
+    const configPath = app.isPackaged 
+      ? path.join(process.resourcesPath, 'config.json')
+      : path.join(__dirname, '..', 'config.json');
+    
+    const configData = await fs.readFile(configPath, 'utf8');
+    return JSON.parse(configData);
+  } catch (error) {
+    console.warn('Could not load config.json:', error);
+    // Return default configuration
+    return {
+      batchConversion: {
+        maxFiles: 30
+      },
+      ui: {
+        language: 'ja'
+      },
+      conversion: {
+        outputQuality: 'high',
+        defaultOutputDirectory: ''
+      }
+    };
+  }
 });
 
 // Handle file drop via IPC - save temporary file
@@ -131,6 +162,28 @@ ipcMain.handle('save-file', async (_, fileName) => {
   
   if (!result.canceled && result.filePath) {
     return result.filePath;
+  }
+  return null;
+});
+
+ipcMain.handle('resize-window', async (_, width, height) => {
+  if (mainWindow) {
+    mainWindow.setSize(Math.ceil(width), Math.ceil(height));
+    mainWindow.center();
+  }
+});
+
+ipcMain.handle('select-vrm-file', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [
+      { name: 'VRM Files', extensions: ['vrm'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+  
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
   }
   return null;
 });
