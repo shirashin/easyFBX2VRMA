@@ -67,6 +67,7 @@ lerna-debug.log*
 ehthumbs.db
 Thumbs.db
 desktop.ini
+nul
 
 # Asset placeholders (if auto-generated)
 assets/*.ico
