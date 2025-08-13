@@ -7,10 +7,12 @@ let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
+    width: 1200,
     height: 700,
+    resizable: false, // Fixed window size
     acceptFirstMouse: true,
     autoHideMenuBar: true, // Hide menu bar
+    center: true, // Center window on screen
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

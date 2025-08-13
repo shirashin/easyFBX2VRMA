@@ -74,13 +74,30 @@ let maxFilesLimit = 30;
 toggleAnimationBtn.disabled = true;
 
 function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error' | 'batch') {
+  // Setup section is handled differently (full screen overlay)
   setupSection.classList.toggle('hidden', section !== 'setup');
-  dropZone.classList.toggle('hidden', section !== 'drop');
-  progressSection.classList.toggle('hidden', section !== 'progress');
-  batchProgressSection.classList.toggle('hidden', section !== 'batch');
-  logSection.classList.toggle('hidden', section !== 'batch');
-  resultSection.classList.toggle('hidden', section !== 'result');
-  errorSection.classList.toggle('hidden', section !== 'error');
+  
+  // For main app, show drop zone unless it's setup
+  dropZone.classList.toggle('hidden', section === 'setup');
+  
+  // Hide all status sections first
+  progressSection.classList.add('hidden');
+  batchProgressSection.classList.add('hidden');
+  logSection.classList.add('hidden');
+  resultSection.classList.add('hidden');
+  errorSection.classList.add('hidden');
+  
+  // Show appropriate status section
+  if (section === 'progress') {
+    progressSection.classList.remove('hidden');
+  } else if (section === 'batch') {
+    batchProgressSection.classList.remove('hidden');
+    logSection.classList.remove('hidden');
+  } else if (section === 'result') {
+    resultSection.classList.remove('hidden');
+  } else if (section === 'error') {
+    errorSection.classList.remove('hidden');
+  }
 }
 
 function updateProgress(percent: number) {
@@ -197,80 +214,44 @@ async function switchToAnimation(index: number) {
   }
 }
 
-async function handleFile(filePath: string) {
-  currentFilePath = filePath;
-  const name = filePath.split(/[\\/]/).pop() || 'Unknown file';
-  fileName.textContent = `Converting: ${name}`;
-  
-  showSection('progress');
-  updateProgress(0);
-  
-  try {
-    statusText.textContent = 'Reading FBX file...';
-    updateProgress(10);
-    
-    statusText.textContent = 'Converting to glTF...';
-    updateProgress(30);
-    
-    statusText.textContent = 'Processing animation data...';
-    updateProgress(60);
-    
-    // Convert FBX to VRMA using the actual converter
-    statusText.textContent = 'Converting FBX to VRMA...';
-    const vrmaData = await window.electronAPI.convertFbxToVrma(filePath);
-    
-    statusText.textContent = 'Saving VRMA file...';
-    updateProgress(90);
-    
-    const baseName = name.replace(/\.fbx$/i, '');
-    const savePath = await window.electronAPI.saveFile(`${baseName}.vrma`);
-    
-    if (savePath) {
-      await window.electronAPI.writeFile(savePath, vrmaData);
-      updateProgress(100);
-      
-      outputPath.textContent = `Saved to: ${savePath}`;
-      
-      // Store VRMA data for preview
-      currentVrmaData = vrmaData;
-      
-      // Initialize VRM preview
-      await initializeVRMPreview();
-      
-      showSection('result');
-    } else {
-      throw new Error('Save cancelled');
-    }
-  } catch (error) {
-    console.error('Conversion error:', error);
-    errorMessage.textContent = error instanceof Error ? error.message : 'Unknown error occurred';
-    showSection('error');
-  }
-}
-
-// Batch conversion handler
-async function handleBatchFiles(filePaths: string[]) {
+// Unified conversion handler - replaces both handleFile and handleBatchFiles
+async function handleConversion(filePaths: string[]) {
   if (!validateFileCount(filePaths)) {
     return;
   }
   
-  batchConversionFiles = [...filePaths];
+  // Reset state
   convertedFiles = [];
   currentBatchIndex = 0;
   
-  showSection('batch');
-  addLogEntry(`一括変換開始: ${filePaths.length}ファイル`, 'info');
+  // Determine if single or batch conversion
+  const isBatch = filePaths.length > 1;
   
-  batchStatusText.textContent = '一括変換中...';
-  updateBatchProgress(0, filePaths.length);
+  if (isBatch) {
+    showSection('batch');
+    addLogEntry(`一括変換開始: ${filePaths.length}ファイル`, 'info');
+    batchStatusText.textContent = '一括変換中...';
+    updateBatchProgress(0, filePaths.length);
+  } else {
+    showSection('progress');
+    const name = filePaths[0].split(/[\\/]/).pop() || 'Unknown file';
+    fileName.textContent = `Converting: ${name}`;
+    updateProgress(0);
+  }
   
+  // Process all files
   for (let i = 0; i < filePaths.length; i++) {
     const filePath = filePaths[i];
     const fileName = filePath.split(/[\\/]/).pop() || `File${i + 1}`;
     
     try {
-      addLogEntry(`${fileName} 変換開始`, 'info');
-      batchStatusText.textContent = `Converting: ${fileName}`;
+      if (isBatch) {
+        addLogEntry(`${fileName} 変換開始`, 'info');
+        batchStatusText.textContent = `Converting: ${fileName}`;
+      } else {
+        statusText.textContent = 'Reading FBX file...';
+        updateProgress(10);
+      }
       
       // Convert FBX to VRMA
       const vrmaData = await window.electronAPI.convertFbxToVrma(filePath);
@@ -281,84 +262,115 @@ async function handleBatchFiles(filePaths: string[]) {
         data: vrmaData
       });
       
-      addLogEntry(`${fileName} 変換完了`, 'success');
-      updateBatchProgress(i + 1, filePaths.length);
+      if (isBatch) {
+        addLogEntry(`${fileName} 変換完了`, 'success');
+        updateBatchProgress(i + 1, filePaths.length);
+      } else {
+        statusText.textContent = 'Conversion completed!';
+        updateProgress(100);
+      }
       
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      addLogEntry(`${fileName} エラー: ${errorMsg}`, 'error');
-      console.error(`Error converting ${fileName}:`, error);
       
-      // Continue with next file even if current one failed
-      updateBatchProgress(i + 1, filePaths.length);
+      if (isBatch) {
+        addLogEntry(`${fileName} エラー: ${errorMsg}`, 'error');
+        console.error(`Error converting ${fileName}:`, error);
+        updateBatchProgress(i + 1, filePaths.length);
+      } else {
+        console.error('Conversion error:', error);
+        errorMessage.textContent = errorMsg;
+        showSection('error');
+        return;
+      }
     }
   }
   
-  // Save all converted files to ZIP
+  // Save results
   if (convertedFiles.length > 0) {
-    await saveBatchAsZip();
+    await saveResults(convertedFiles, isBatch);
     
     // Initialize VRM preview with first file
     currentVrmaData = convertedFiles[0].data;
     await initializeVRMPreview();
     updateFileSelector();
     
-    batchStatusText.textContent = `完了: ${convertedFiles.length}/${filePaths.length}ファイル変換成功`;
-    addLogEntry(`一括変換完了: ${convertedFiles.length}/${filePaths.length}ファイル成功`, 'success');
+    if (isBatch) {
+      batchStatusText.textContent = `完了: ${convertedFiles.length}/${filePaths.length}ファイル変換成功`;
+      addLogEntry(`一括変換完了: ${convertedFiles.length}/${filePaths.length}ファイル成功`, 'success');
+    }
     
     showSection('result');
-  } else {
+  } else if (isBatch) {
     addLogEntry('すべてのファイルの変換に失敗しました', 'error');
     errorMessage.textContent = 'すべてのファイルの変換に失敗しました';
     showSection('error');
   }
 }
 
-// Save batch converted files as ZIP
-async function saveBatchAsZip() {
+// Save results as single file or ZIP
+async function saveResults(convertedFiles: {name: string, data: ArrayBuffer}[], isBatch: boolean) {
   try {
-    // Import JSZip dynamically
-    const JSZip = (await import('jszip')).default;
-    const zip = new JSZip();
-    
-    // Add each converted file to ZIP
-    convertedFiles.forEach(file => {
-      const baseName = getFileNameWithoutExtension(file.name);
-      zip.file(`${baseName}.vrma`, file.data);
-    });
-    
-    // Generate ZIP content
-    const zipContent = await zip.generateAsync({ type: 'uint8array' });
-    
-    // Save ZIP file
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-    const zipFileName = `converted_animations_${timestamp}.zip`;
-    const savePath = await window.electronAPI.saveFile(zipFileName);
-    
-    if (savePath) {
-      // Convert Uint8Array to ArrayBuffer safely
-      const arrayBuffer = new ArrayBuffer(zipContent.byteLength);
-      const view = new Uint8Array(arrayBuffer);
-      view.set(zipContent);
-      await window.electronAPI.writeFile(savePath, arrayBuffer);
-      outputPath.textContent = `Saved to: ${savePath}`;
-      addLogEntry(`ZIPファイル保存完了: ${savePath}`, 'success');
+    if (isBatch) {
+      // Save as ZIP
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      
+      convertedFiles.forEach(file => {
+        const baseName = getFileNameWithoutExtension(file.name);
+        zip.file(`${baseName}.vrma`, file.data);
+      });
+      
+      const zipContent = await zip.generateAsync({ type: 'uint8array' });
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+      const zipFileName = `converted_animations_${timestamp}.zip`;
+      const savePath = await window.electronAPI.saveFile(zipFileName);
+      
+      if (savePath) {
+        const arrayBuffer = new ArrayBuffer(zipContent.byteLength);
+        const view = new Uint8Array(arrayBuffer);
+        view.set(zipContent);
+        await window.electronAPI.writeFile(savePath, arrayBuffer);
+        outputPath.textContent = `Saved to: ${savePath}`;
+        if (isBatch) addLogEntry(`ZIPファイル保存完了: ${savePath}`, 'success');
+      } else {
+        throw new Error('ZIP保存がキャンセルされました');
+      }
     } else {
-      throw new Error('ZIP保存がキャンセルされました');
+      // Save single VRMA file
+      const file = convertedFiles[0];
+      const baseName = getFileNameWithoutExtension(file.name);
+      const savePath = await window.electronAPI.saveFile(`${baseName}.vrma`);
+      
+      if (savePath) {
+        await window.electronAPI.writeFile(savePath, file.data);
+        outputPath.textContent = `Saved to: ${savePath}`;
+      } else {
+        throw new Error('Save cancelled');
+      }
     }
-    
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'ZIP生成エラー';
-    addLogEntry(`ZIP保存エラー: ${errorMsg}`, 'error');
+    const errorMsg = error instanceof Error ? error.message : 'Save error';
+    if (isBatch) addLogEntry(`保存エラー: ${errorMsg}`, 'error');
     throw error;
   }
+}
+
+// Legacy function for backward compatibility - now calls unified handler
+async function handleFile(filePath: string) {
+  await handleConversion([filePath]);
+}
+
+// Legacy function for backward compatibility - now calls unified handler
+async function handleBatchFiles(filePaths: string[]) {
+  await handleConversion(filePaths);
 }
 
 dropZone.addEventListener('click', async () => {
   if (window.electronAPI) {
     const filePath = await window.electronAPI.selectFile();
     if (filePath) {
-      handleFile(filePath);
+      handleConversion([filePath]);
     }
   } else {
     // Browser fallback
@@ -422,12 +434,8 @@ dropZone.addEventListener('drop', async (e) => {
     return;
   }
   
-  // Handle single or multiple files
-  if (filePaths.length === 1) {
-    handleFile(filePaths[0]);
-  } else {
-    handleBatchFiles(filePaths);
-  }
+  // Use unified conversion handler
+  handleConversion(filePaths);
 });
 
 fileInput.addEventListener('change', async (e) => {
@@ -461,12 +469,8 @@ fileInput.addEventListener('change', async (e) => {
     return;
   }
   
-  // Handle single or multiple files
-  if (filePaths.length === 1) {
-    handleFile(filePaths[0]);
-  } else {
-    handleBatchFiles(filePaths);
-  }
+  // Use unified conversion handler
+  handleConversion(filePaths);
   
   // Reset file input
   target.value = '';
@@ -612,7 +616,7 @@ convertAnother.addEventListener('click', () => {
 
 tryAgain.addEventListener('click', () => {
   if (currentFilePath) {
-    handleFile(currentFilePath);
+    handleConversion([currentFilePath]);
   } else {
     showSection('drop');
   }
@@ -668,7 +672,7 @@ if (window.electronAPI) {
 // Listen for native Electron file drop events
 if (window.electronAPI && window.electronAPI.onFileDropped) {
   window.electronAPI.onFileDropped((filePath: string) => {
-    handleFile(filePath);
+    handleConversion([filePath]);
   });
 }
 

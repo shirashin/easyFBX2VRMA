@@ -8,9 +8,9 @@
 </head>
 <body>
   <div id="app">
-    <div class="container">
-      <!-- Initial Setup Section -->
-      <div id="setup-section" class="setup-section hidden">
+    <!-- Initial Setup Section (Full Screen) -->
+    <div id="setup-section" class="setup-section hidden">
+      <div class="setup-container">
         <h1>FBX to VRMA Converter</h1>
         <div class="setup-content">
           <div class="setup-icon">⚙️</div>
@@ -24,90 +24,105 @@
           </div>
         </div>
       </div>
+    </div>
 
+    <!-- Main Application Container -->
+    <div class="main-container">
       <h1>FBX to VRMA Converter</h1>
       
-      <div id="drop-zone" class="drop-zone">
-        <div class="drop-zone-content">
-          <svg class="icon" viewBox="0 0 24 24" width="64" height="64">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
-          </svg>
-          <p class="drop-text">Drag and drop FBX files here (1-30 files)</p>
-          <p class="drop-subtext">or click to browse</p>
-          <input type="file" id="file-input" accept=".fbx" multiple hidden>
-        </div>
-      </div>
+      <!-- Horizontal Layout: Left Controls + Right Preview -->
+      <div class="app-layout">
+        <!-- Left Panel: Drop Zone + Controls -->
+        <div class="left-panel">
+          <div id="drop-zone" class="drop-zone">
+            <div class="drop-zone-content">
+              <svg class="icon" viewBox="0 0 24 24" width="48" height="48">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
+              </svg>
+              <p class="drop-text">Drag and drop FBX files here (1-30 files)</p>
+              <p class="drop-subtext">or click to browse</p>
+              <input type="file" id="file-input" accept=".fbx" multiple hidden>
+            </div>
+          </div>
 
-      <div id="progress-section" class="progress-section hidden">
-        <div class="file-info">
-          <span id="file-name"></span>
-        </div>
-        <div class="progress-bar">
-          <div id="progress-fill" class="progress-fill"></div>
-        </div>
-        <div class="progress-status">
-          <span id="status-text">Processing...</span>
-        </div>
-      </div>
+          <div id="progress-section" class="progress-section hidden">
+            <div class="file-info">
+              <span id="file-name"></span>
+            </div>
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <div class="progress-status">
+              <span id="status-text">Processing...</span>
+            </div>
+          </div>
 
-      <!-- Batch Conversion Progress Section -->
-      <div id="batch-progress-section" class="batch-progress-section hidden">
-        <h3>Batch Conversion Progress</h3>
-        <div class="batch-info">
-          <span id="batch-file-count">0/0 files processed</span>
-        </div>
-        <div class="progress-bar">
-          <div id="batch-progress-fill" class="progress-fill"></div>
-        </div>
-        <div class="progress-status">
-          <span id="batch-status-text">Preparing batch conversion...</span>
-        </div>
-      </div>
+          <!-- Batch Conversion Progress Section -->
+          <div id="batch-progress-section" class="batch-progress-section hidden">
+            <h3>Batch Conversion Progress</h3>
+            <div class="batch-info">
+              <span id="batch-file-count">0/0 files processed</span>
+            </div>
+            <div class="progress-bar">
+              <div id="batch-progress-fill" class="progress-fill"></div>
+            </div>
+            <div class="progress-status">
+              <span id="batch-status-text">Preparing batch conversion...</span>
+            </div>
+          </div>
 
-      <!-- Conversion Log Section -->
-      <div id="log-section" class="log-section hidden">
-        <h3>Conversion Log</h3>
-        <div id="conversion-log" class="conversion-log"></div>
-      </div>
+          <!-- Conversion Log Section -->
+          <div id="log-section" class="log-section hidden">
+            <h3>Conversion Log</h3>
+            <div id="conversion-log" class="conversion-log"></div>
+          </div>
 
-      <div id="result-section" class="result-section hidden">
-        <div class="success-message">
-          <svg class="icon success" viewBox="0 0 24 24" width="48" height="48">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
-          </svg>
-          <p>Conversion successful!</p>
-          <p id="output-path" class="output-path"></p>
+          <div id="result-section" class="result-section hidden">
+            <div class="success-message">
+              <svg class="icon success" viewBox="0 0 24 24" width="32" height="32">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
+              </svg>
+              <p>Conversion successful!</p>
+              <p id="output-path" class="output-path"></p>
+            </div>
+            <button id="convert-another" class="btn">Convert Another File</button>
+          </div>
+
+          <div id="error-section" class="error-section hidden">
+            <div class="error-message">
+              <svg class="icon error" viewBox="0 0 24 24" width="32" height="32">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
+              </svg>
+              <p>Conversion failed</p>
+              <p id="error-message" class="error-detail"></p>
+            </div>
+            <button id="try-again" class="btn">Try Again</button>
+          </div>
         </div>
         
-        <!-- VRM Animation Preview Section -->
-        <div class="vrm-preview-section">
-          <h3>Animation Preview</h3>
-          
-          <!-- File Selector for Multiple Animations -->
-          <div id="file-selector" class="file-selector hidden">
-            <h4>Select Animation:</h4>
-            <div id="file-buttons" class="file-buttons"></div>
+        <!-- Right Panel: Animation Preview -->
+        <div class="right-panel">
+          <div class="preview-section">
+            <h3>Animation Preview</h3>
+            
+            <!-- File Selector for Multiple Animations -->
+            <div id="file-selector" class="file-selector hidden">
+              <h4>Select Animation:</h4>
+              <div id="file-buttons" class="file-buttons"></div>
+            </div>
+            
+            <div id="vrm-viewer" class="vrm-viewer-container">
+              <div class="preview-placeholder">
+                <div class="placeholder-icon">🎭</div>
+                <p>Animation preview will appear here</p>
+              </div>
+            </div>
+            <div class="vrm-controls">
+              <button id="toggle-animation" class="btn-control">Play</button>
+            </div>
+            <div id="animation-status" class="animation-status">Ready for animation preview</div>
           </div>
-          
-          <div id="vrm-viewer" class="vrm-viewer-container"></div>
-          <div class="vrm-controls">
-            <button id="toggle-animation" class="btn-control">Play</button>
-          </div>
-          <div id="animation-status" class="animation-status"></div>
         </div>
-        
-        <button id="convert-another" class="btn">Convert Another File</button>
-      </div>
-
-      <div id="error-section" class="error-section hidden">
-        <div class="error-message">
-          <svg class="icon error" viewBox="0 0 24 24" width="48" height="48">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"/>
-          </svg>
-          <p>Conversion failed</p>
-          <p id="error-message" class="error-detail"></p>
-        </div>
-        <button id="try-again" class="btn">Try Again</button>
       </div>
     </div>
   </div>
