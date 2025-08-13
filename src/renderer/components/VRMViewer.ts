@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, VRM } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export interface VRMViewerOptions {
@@ -36,7 +36,7 @@ export class VRMViewer {
     this.container = container;
     this.options = {
       background: options.background ?? 0x212121,
-      cameraPosition: options.cameraPosition ?? { x: 0, y: 1.3, z: -3 },
+      cameraPosition: options.cameraPosition ?? { x: 0, y: 1.3, z: 1.5 },
       cameraTarget: options.cameraTarget ?? { x: 0, y: 1, z: 0 },
       enableShadows: options.enableShadows ?? true,
       enableOrbitControls: options.enableOrbitControls ?? true,
@@ -252,6 +252,9 @@ export class VRMViewer {
         this.scene.remove(this.vrm.scene);
       }
 
+      // VRM 0.x系の向き補正を適用
+      this.applyVRMCorrection(vrm);
+
       // 新しいVRMを追加
       this.vrm = vrm;
       this.scene.add(vrm.scene);
@@ -289,6 +292,99 @@ export class VRMViewer {
    */
   getVRM(): VRM | null {
     return this.vrm;
+  }
+
+  /**
+   * 背景色を変更
+   */
+  setBackgroundColor(color: number): void {
+    if (this.scene) {
+      this.scene.background = new THREE.Color(color);
+    }
+  }
+
+  /**
+   * VRMバージョンを判定
+   */
+  private getVRMVersion(vrm: VRM): string {
+    // VRM 1.0の場合、meta.metaVersionが存在する
+    if (vrm.meta && (vrm.meta as any).metaVersion) {
+      return '1.0';
+    }
+    // VRM 0.xの場合
+    return '0.x';
+  }
+
+  /**
+   * VRMの向き補正を適用（VRMUtils.rotateVRM0を使用）
+   */
+  private applyVRMCorrection(vrm: VRM): void {
+    // バージョンに関わらず、すべてのVRMにrotateVRM0を適用
+    // カメラが正面（z: 1.5）にあるため、180度回転で前面を向かせる
+    VRMUtils.rotateVRM0(vrm);
+  }
+
+  /**
+   * 新しいVRMファイルでキャラクターを交換
+   */
+  async swapCharacter(vrmFilePath: string): Promise<VRM> {
+    if (!this.scene) {
+      throw new Error('Scene not initialized');
+    }
+
+    try {
+      // 現在のアニメーション状態を保存
+      const currentAnimationTime = this.mixer ? this.mixer.time : 0;
+      const wasPlaying = this.mixer && this.mixer.timeScale > 0;
+
+      const loader = new GLTFLoader();
+      loader.register((parser) => new VRMLoaderPlugin(parser));
+
+      const gltf = await loader.loadAsync(vrmFilePath);
+      const newVrm = gltf.userData.vrm as VRM;
+
+      if (!newVrm) {
+        throw new Error('No VRM data found in the loaded file');
+      }
+
+      // VRM 0.x系の向き補正を適用
+      this.applyVRMCorrection(newVrm);
+
+      // 既存のVRMがあれば削除
+      if (this.vrm) {
+        this.scene.remove(this.vrm.scene);
+      }
+
+      // 新しいVRMを追加
+      this.vrm = newVrm;
+      this.scene.add(newVrm.scene);
+
+      // 新しいAnimationMixerを作成
+      this.mixer = new THREE.AnimationMixer(newVrm.scene);
+
+      // アニメーション状態を復元（必要に応じて）
+      if (wasPlaying && currentAnimationTime > 0) {
+        // アニメーションが再生中だった場合、時間を設定
+        this.mixer.setTime(currentAnimationTime);
+      }
+
+      // シャドウの設定
+      if (this.options.enableShadows) {
+        newVrm.scene.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+      }
+
+      console.log('VRM character swapped successfully');
+      return newVrm;
+
+    } catch (error) {
+      console.error('Error swapping VRM character:', error);
+      throw error;
+    }
   }
 
   /**

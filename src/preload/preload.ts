@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onConvertProgress: (callback: (progress: number) => void) => {
     ipcRenderer.on('convert-progress', (_, progress) => callback(progress));
   },
+  resizeWindow: (width: number, height: number) => ipcRenderer.invoke('resize-window', width, height),
+  selectVrmFile: () => ipcRenderer.invoke('select-vrm-file'),
 });

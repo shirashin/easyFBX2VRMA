@@ -72,21 +72,11 @@
           </div>
 
           <!-- Conversion Log Section -->
-          <div id="log-section" class="log-section hidden">
+          <div id="log-section" class="log-section">
             <h3>Conversion Log</h3>
             <div id="conversion-log" class="conversion-log"></div>
           </div>
 
-          <div id="result-section" class="result-section hidden">
-            <div class="success-message">
-              <svg class="icon success" viewBox="0 0 24 24" width="32" height="32">
-                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/>
-              </svg>
-              <p>Conversion successful!</p>
-              <p id="output-path" class="output-path"></p>
-            </div>
-            <button id="convert-another" class="btn">Convert Another File</button>
-          </div>
 
           <div id="error-section" class="error-section hidden">
             <div class="error-message">
@@ -106,8 +96,7 @@
             <h3>Animation Preview</h3>
             
             <!-- File Selector for Multiple Animations -->
-            <div id="file-selector" class="file-selector hidden">
-              <h4>Select Animation:</h4>
+            <div id="file-selector" class="file-selector">
               <div id="file-buttons" class="file-buttons"></div>
             </div>
             
@@ -118,7 +107,38 @@
               </div>
             </div>
             <div class="vrm-controls">
-              <button id="toggle-animation" class="btn-control">Play</button>
+              <button id="toggle-animation" class="btn-control">
+                <span class="btn-icon">▶</span>
+                <span class="btn-text">Play</span>
+              </button>
+              <button id="change-character" class="btn-control">
+                <span class="btn-icon">👤</span>
+                <span class="btn-text">Character</span>
+              </button>
+              <button id="background-color" class="btn-control">
+                <span class="btn-icon">🎨</span>
+                <span class="btn-text">Background</span>
+              </button>
+            </div>
+            
+            <!-- Color Picker Modal -->
+            <div id="color-picker-modal" class="color-picker-modal hidden">
+              <div class="color-picker-content">
+                <h4>Background Color</h4>
+                <div class="preset-colors">
+                  <button class="color-preset" data-color="#212121" style="background-color: #212121;" title="Black"></button>
+                  <button class="color-preset" data-color="#00FF00" style="background-color: #00FF00;" title="Green"></button>
+                  <button class="color-preset" data-color="#f5f5f5" style="background-color: #f5f5f5;" title="White"></button>
+                </div>
+                <div class="custom-color">
+                  <label for="color-input">Custom Color:</label>
+                  <input type="color" id="color-input" value="#212121">
+                </div>
+                <div class="color-picker-buttons">
+                  <button id="apply-color" class="btn-small">Apply</button>
+                  <button id="cancel-color" class="btn-small">Cancel</button>
+                </div>
+              </div>
             </div>
             <div id="animation-status" class="animation-status">Ready for animation preview</div>
           </div>

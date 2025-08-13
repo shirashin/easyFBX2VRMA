@@ -15,6 +15,8 @@ declare global {
       convertFbxToVrma: (fbxPath: string) => Promise<ArrayBuffer>;
       loadConfig: () => Promise<any>;
       onConversionProgress: (callback: (progress: number) => void) => void;
+      resizeWindow: (width: number, height: number) => Promise<void>;
+      selectVrmFile: () => Promise<string | null>;
     };
   }
 }
@@ -24,14 +26,13 @@ declare global {
 const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
 const progressSection = document.getElementById('progress-section') as HTMLDivElement;
-const resultSection = document.getElementById('result-section') as HTMLDivElement;
+// const resultSection = document.getElementById('result-section') as HTMLDivElement; // Removed - not needed anymore
 const errorSection = document.getElementById('error-section') as HTMLDivElement;
 const progressFill = document.getElementById('progress-fill') as HTMLDivElement;
 const statusText = document.getElementById('status-text') as HTMLSpanElement;
 const fileName = document.getElementById('file-name') as HTMLSpanElement;
-const outputPath = document.getElementById('output-path') as HTMLParagraphElement;
+// const outputPath = document.getElementById('output-path') as HTMLParagraphElement; // Removed - element no longer exists
 const errorMessage = document.getElementById('error-message') as HTMLParagraphElement;
-const convertAnother = document.getElementById('convert-another') as HTMLButtonElement;
 const tryAgain = document.getElementById('try-again') as HTMLButtonElement;
 
 // Setup elements
@@ -43,7 +44,16 @@ const setupProgressText = document.getElementById('setup-progress-text') as HTML
 // VRM Preview elements
 const vrmViewerContainer = document.getElementById('vrm-viewer') as HTMLDivElement;
 const toggleAnimationBtn = document.getElementById('toggle-animation') as HTMLButtonElement;
+const changeCharacterBtn = document.getElementById('change-character') as HTMLButtonElement;
+const backgroundColorBtn = document.getElementById('background-color') as HTMLButtonElement;
 const animationStatus = document.getElementById('animation-status') as HTMLDivElement;
+
+// Color picker elements
+const colorPickerModal = document.getElementById('color-picker-modal') as HTMLDivElement;
+const colorPresets = document.querySelectorAll('.color-preset') as NodeListOf<HTMLButtonElement>;
+const colorInput = document.getElementById('color-input') as HTMLInputElement;
+const applyColorBtn = document.getElementById('apply-color') as HTMLButtonElement;
+const cancelColorBtn = document.getElementById('cancel-color') as HTMLButtonElement;
 
 // Batch conversion elements
 const batchProgressSection = document.getElementById('batch-progress-section') as HTMLDivElement;
@@ -64,6 +74,14 @@ let currentVrmaData: ArrayBuffer | null = null;
 let vrmViewer: VRMViewer | null = null;
 let animationManager: VRMAnimationManager | null = null;
 
+// Animation state for character swapping
+let currentAnimationClip: any = null;
+let isAnimationPlaying = false;
+
+// Current character and background settings
+let currentVrmPath: string | null = null;
+let currentBackgroundColor: number = 0x212121;
+
 // Batch conversion state
 let batchConversionFiles: string[] = [];
 let convertedFiles: {name: string, data: ArrayBuffer}[] = [];
@@ -73,7 +91,7 @@ let maxFilesLimit = 30;
 // Initialize controls as disabled
 toggleAnimationBtn.disabled = true;
 
-function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error' | 'batch') {
+function showSection(section: 'setup' | 'drop' | 'progress' | 'error' | 'batch') {
   // Setup section is handled differently (full screen overlay)
   setupSection.classList.toggle('hidden', section !== 'setup');
   
@@ -83,8 +101,6 @@ function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error'
   // Hide all status sections first
   progressSection.classList.add('hidden');
   batchProgressSection.classList.add('hidden');
-  logSection.classList.add('hidden');
-  resultSection.classList.add('hidden');
   errorSection.classList.add('hidden');
   
   // Show appropriate status section
@@ -92,9 +108,6 @@ function showSection(section: 'setup' | 'drop' | 'progress' | 'result' | 'error'
     progressSection.classList.remove('hidden');
   } else if (section === 'batch') {
     batchProgressSection.classList.remove('hidden');
-    logSection.classList.remove('hidden');
-  } else if (section === 'result') {
-    resultSection.classList.remove('hidden');
   } else if (section === 'error') {
     errorSection.classList.remove('hidden');
   }
@@ -159,11 +172,7 @@ function getFileNameWithoutExtension(fileName: string): string {
 }
 
 function updateFileSelector() {
-  if (convertedFiles.length <= 1) {
-    fileSelector.classList.add('hidden');
-    return;
-  }
-  
+  // Always show file selector now
   fileSelector.classList.remove('hidden');
   fileButtons.innerHTML = '';
   
@@ -202,7 +211,7 @@ async function switchToAnimation(index: number) {
       const clip = await animationManager.loadVRMA(selectedFile.data);
       
       // Update UI to reflect playing state
-      toggleAnimationBtn.textContent = 'Stop';
+      updateToggleButton('Stop', '⏸');
       toggleAnimationBtn.disabled = false;
       updateAnimationStatus(`Playing: ${getFileNameWithoutExtension(selectedFile.name)} (${clip.duration.toFixed(1)}s)`);
       
@@ -237,6 +246,7 @@ async function handleConversion(filePaths: string[]) {
     const name = filePaths[0].split(/[\\/]/).pop() || 'Unknown file';
     fileName.textContent = `Converting: ${name}`;
     updateProgress(0);
+    addLogEntry(`変換開始: ${name}`, 'info');
   }
   
   // Process all files
@@ -251,6 +261,7 @@ async function handleConversion(filePaths: string[]) {
       } else {
         statusText.textContent = 'Reading FBX file...';
         updateProgress(10);
+        addLogEntry(`${fileName} 変換処理中...`, 'info');
       }
       
       // Convert FBX to VRMA
@@ -268,6 +279,7 @@ async function handleConversion(filePaths: string[]) {
       } else {
         statusText.textContent = 'Conversion completed!';
         updateProgress(100);
+        addLogEntry(`${fileName} 変換完了`, 'success');
       }
       
     } catch (error) {
@@ -278,6 +290,7 @@ async function handleConversion(filePaths: string[]) {
         console.error(`Error converting ${fileName}:`, error);
         updateBatchProgress(i + 1, filePaths.length);
       } else {
+        addLogEntry(`${fileName} エラー: ${errorMsg}`, 'error');
         console.error('Conversion error:', error);
         errorMessage.textContent = errorMsg;
         showSection('error');
@@ -298,9 +311,11 @@ async function handleConversion(filePaths: string[]) {
     if (isBatch) {
       batchStatusText.textContent = `完了: ${convertedFiles.length}/${filePaths.length}ファイル変換成功`;
       addLogEntry(`一括変換完了: ${convertedFiles.length}/${filePaths.length}ファイル成功`, 'success');
+    } else {
+      addLogEntry(`変換完了: ${convertedFiles[0].name}`, 'success');
     }
     
-    showSection('result');
+    showSection('drop');
   } else if (isBatch) {
     addLogEntry('すべてのファイルの変換に失敗しました', 'error');
     errorMessage.textContent = 'すべてのファイルの変換に失敗しました';
@@ -331,8 +346,8 @@ async function saveResults(convertedFiles: {name: string, data: ArrayBuffer}[], 
         const view = new Uint8Array(arrayBuffer);
         view.set(zipContent);
         await window.electronAPI.writeFile(savePath, arrayBuffer);
-        outputPath.textContent = `Saved to: ${savePath}`;
-        if (isBatch) addLogEntry(`ZIPファイル保存完了: ${savePath}`, 'success');
+        // outputPath.textContent = `Saved to: ${savePath}`; // Removed - using log instead
+        addLogEntry(`ZIPファイル保存完了: ${savePath}`, 'success');
       } else {
         throw new Error('ZIP保存がキャンセルされました');
       }
@@ -344,14 +359,15 @@ async function saveResults(convertedFiles: {name: string, data: ArrayBuffer}[], 
       
       if (savePath) {
         await window.electronAPI.writeFile(savePath, file.data);
-        outputPath.textContent = `Saved to: ${savePath}`;
+        // outputPath.textContent = `Saved to: ${savePath}`; // Removed - using log instead
+        addLogEntry(`VRMAファイル保存完了: ${savePath}`, 'success');
       } else {
         throw new Error('Save cancelled');
       }
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Save error';
-    if (isBatch) addLogEntry(`保存エラー: ${errorMsg}`, 'error');
+    addLogEntry(`保存エラー: ${errorMsg}`, 'error');
     throw error;
   }
 }
@@ -490,20 +506,23 @@ async function initializeVRMPreview(): Promise<void> {
     vrmViewerContainer.innerHTML = '';
     vrmViewerContainer.classList.remove('loaded');
 
-    // Initialize VRM viewer
+    // Initialize VRM viewer with current background color
     vrmViewer = new VRMViewer(vrmViewerContainer, {
-      background: 0x212121,
-      cameraPosition: { x: 0, y: 1.3, z: -3 },
+      background: currentBackgroundColor,
+      cameraPosition: { x: 0, y: 1.3, z: 1.5 },
       cameraTarget: { x: 0, y: 1, z: 0 },
       enableShadows: true,
       enableOrbitControls: true,
-      enableGround: true,
+      enableGround: false,
     });
 
     await vrmViewer.initialize();
 
-    // Load VRM model
-    const vrm = await vrmViewer.loadVRM(Character02VrmUrl);
+    // Load VRM model (use custom character if set, otherwise default)
+    const vrmUrl = currentVrmPath || Character02VrmUrl;
+    const vrm = currentVrmPath ? 
+      await vrmViewer.swapCharacter(currentVrmPath) : 
+      await vrmViewer.loadVRM(vrmUrl);
     const mixer = vrmViewer.getMixer();
 
     if (mixer) {
@@ -520,7 +539,7 @@ async function initializeVRMPreview(): Promise<void> {
         await animationManager.playAnimation(clip, true);
         
         // Set button to Stop since animation is now playing
-        toggleAnimationBtn.textContent = 'Stop';
+        updateToggleButton('Stop', '⏸');
         toggleAnimationBtn.disabled = false;
         updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
         
@@ -528,7 +547,7 @@ async function initializeVRMPreview(): Promise<void> {
       } catch (error) {
         console.error('Failed to auto-start animation:', error);
         updateAnimationStatus('VRM model loaded. Animation auto-start failed.');
-        toggleAnimationBtn.textContent = 'Play';
+        updateToggleButton('Play', '▶');
         toggleAnimationBtn.disabled = false;
       }
     } else {
@@ -547,6 +566,13 @@ function updateAnimationStatus(message: string): void {
   animationStatus.textContent = message;
 }
 
+function updateToggleButton(text: string, icon: string): void {
+  const btnText = toggleAnimationBtn.querySelector('.btn-text');
+  const btnIcon = toggleAnimationBtn.querySelector('.btn-icon');
+  if (btnText) btnText.textContent = text;
+  if (btnIcon) btnIcon.textContent = icon;
+}
+
 // VRM Animation Control Event Listener
 toggleAnimationBtn.addEventListener('click', async () => {
   if (!animationManager) {
@@ -563,7 +589,9 @@ toggleAnimationBtn.addEventListener('click', async () => {
       const clip = await animationManager.loadVRMA(currentVrmaData);
       await animationManager.playAnimation(clip, true);
       
-      toggleAnimationBtn.textContent = 'Stop';
+      currentAnimationClip = clip;
+      isAnimationPlaying = true;
+      updateToggleButton('Stop', '⏸');
       updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
     } else {
       // 既に読み込まれている場合は一時停止/再開をトグル
@@ -571,11 +599,13 @@ toggleAnimationBtn.addEventListener('click', async () => {
       
       if (playState.isPlaying) {
         animationManager.toggleAnimation();
-        toggleAnimationBtn.textContent = 'Play';
+        isAnimationPlaying = false;
+        updateToggleButton('Play', '▶');
         updateAnimationStatus('Animation paused');
       } else {
         animationManager.toggleAnimation();
-        toggleAnimationBtn.textContent = 'Stop';
+        isAnimationPlaying = true;
+        updateToggleButton('Stop', '⏸');
         updateAnimationStatus(`Playing: ${playState.clipName || 'Animation'}`);
       }
     }
@@ -587,38 +617,110 @@ toggleAnimationBtn.addEventListener('click', async () => {
   }
 });
 
-convertAnother.addEventListener('click', () => {
-  // Dispose VRM preview
-  if (vrmViewer) {
-    vrmViewer.dispose();
-    vrmViewer = null;
-    animationManager = null;
-  }
-  
-  // Reset all state
-  currentFilePath = null;
-  currentVrmaData = null;
-  batchConversionFiles = [];
-  convertedFiles = [];
-  currentBatchIndex = 0;
-  
-  // Reset UI
-  showSection('drop');
-  fileSelector.classList.add('hidden');
-  fileButtons.innerHTML = '';
-  conversionLog.innerHTML = '';
-  
-  // Reset controls
-  toggleAnimationBtn.disabled = true;
-  toggleAnimationBtn.textContent = 'Play';
-  updateAnimationStatus('');
-});
 
 tryAgain.addEventListener('click', () => {
   if (currentFilePath) {
     handleConversion([currentFilePath]);
   } else {
     showSection('drop');
+  }
+});
+
+// Character Change Event Handler
+changeCharacterBtn.addEventListener('click', async () => {
+  try {
+    // Fallback to selectFile if selectVrmFile is not available
+    const vrmFilePath = window.electronAPI.selectVrmFile ? 
+      await window.electronAPI.selectVrmFile() : 
+      await window.electronAPI.selectFile();
+    if (vrmFilePath && vrmViewer) {
+      // Validate file extension
+      if (!vrmFilePath.toLowerCase().endsWith('.vrm')) {
+        addLogEntry('VRMファイルを選択してください', 'error');
+        return;
+      }
+      // Save current animation state
+      if (animationManager) {
+        currentAnimationClip = animationManager.getCurrentClip();
+        const playState = animationManager.getPlayState();
+        isAnimationPlaying = playState.isPlaying;
+      }
+
+      // Swap character
+      const newVrm = await vrmViewer.swapCharacter(vrmFilePath);
+      currentVrmPath = vrmFilePath; // Save current character path
+      
+      // Recreate animation manager with new VRM
+      const mixer = vrmViewer.getMixer();
+      if (mixer) {
+        animationManager = new VRMAnimationManager(newVrm, mixer);
+        
+        // Restore animation if it was playing
+        if (currentAnimationClip && currentVrmaData) {
+          try {
+            const clip = await animationManager.loadVRMA(currentVrmaData);
+            if (isAnimationPlaying) {
+              await animationManager.playAnimation(clip, true);
+              updateToggleButton('Stop', '⏸');
+              updateAnimationStatus(`Playing: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+            } else {
+              updateAnimationStatus(`Ready: ${clip.name} (${clip.duration.toFixed(1)}s)`);
+            }
+          } catch (error) {
+            console.error('Failed to restore animation:', error);
+            updateAnimationStatus('Animation could not be restored');
+          }
+        }
+      }
+      
+      addLogEntry('キャラクターを変更しました', 'success');
+    }
+  } catch (error) {
+    console.error('Error changing character:', error);
+    addLogEntry(`キャラクター変更エラー: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+  }
+});
+
+// Background Color Event Handlers
+backgroundColorBtn.addEventListener('click', () => {
+  colorPickerModal.classList.remove('hidden');
+});
+
+// Color preset selection
+colorPresets.forEach(preset => {
+  preset.addEventListener('click', () => {
+    const color = preset.getAttribute('data-color');
+    if (color) {
+      colorInput.value = color;
+      // Remove selected class from all presets
+      colorPresets.forEach(p => p.classList.remove('selected'));
+      // Add selected class to clicked preset
+      preset.classList.add('selected');
+    }
+  });
+});
+
+applyColorBtn.addEventListener('click', () => {
+  const colorValue = colorInput.value;
+  const colorNumber = parseInt(colorValue.replace('#', ''), 16);
+  
+  if (vrmViewer) {
+    vrmViewer.setBackgroundColor(colorNumber);
+    currentBackgroundColor = colorNumber; // Save current color
+    addLogEntry(`背景色を変更しました: ${colorValue}`, 'info');
+  }
+  
+  colorPickerModal.classList.add('hidden');
+});
+
+cancelColorBtn.addEventListener('click', () => {
+  colorPickerModal.classList.add('hidden');
+});
+
+// Close modal when clicking outside
+colorPickerModal.addEventListener('click', (e) => {
+  if (e.target === colorPickerModal) {
+    colorPickerModal.classList.add('hidden');
   }
 });
 
@@ -683,6 +785,21 @@ if (window.electronAPI && window.electronAPI.onConversionProgress) {
   });
 }
 
+// Adjust window size to fit content
+function adjustWindowSize() {
+  if (window.electronAPI) {
+    const container = document.querySelector('.main-container') as HTMLElement;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const requiredWidth = rect.width + 60; // Add margin for better fit
+      const requiredHeight = rect.height + 60;
+      
+      // Request window resize from main process
+      window.electronAPI.resizeWindow(requiredWidth, requiredHeight);
+    }
+  }
+}
+
 // Initialize application
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -694,6 +811,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (dropText) {
       dropText.textContent = `Drag and drop FBX files here (1-${maxFilesLimit} files)`;
     }
+    
+    // Initialize VRM preview with default T-pose
+    await initializeVRMPreview();
+    
+    // Add initial log message
+    addLogEntry('アプリケーションが起動しました。FBXファイルをドラッグ&ドロップして変換を開始してください。', 'info');
+    
+    // Adjust window size to fit content
+    setTimeout(() => {
+      adjustWindowSize();
+    }, 100);
     
     console.log(`Application initialized. Max files limit: ${maxFilesLimit}`);
   } catch (error) {

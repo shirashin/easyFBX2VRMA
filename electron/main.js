@@ -7,8 +7,8 @@ let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 700,
+    width: 1470,
+    height: 870,
     resizable: false, // Fixed window size
     acceptFirstMouse: true,
     autoHideMenuBar: true, // Hide menu bar
@@ -90,6 +90,7 @@ ipcMain.handle('select-file', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile', 'multiSelections'],
     filters: [
+      { name: 'VRM Files', extensions: ['vrm'] },
       { name: 'FBX Files', extensions: ['fbx'] },
       { name: 'All Files', extensions: ['*'] },
     ],
@@ -161,6 +162,28 @@ ipcMain.handle('save-file', async (_, fileName) => {
   
   if (!result.canceled && result.filePath) {
     return result.filePath;
+  }
+  return null;
+});
+
+ipcMain.handle('resize-window', async (_, width, height) => {
+  if (mainWindow) {
+    mainWindow.setSize(Math.ceil(width), Math.ceil(height));
+    mainWindow.center();
+  }
+});
+
+ipcMain.handle('select-vrm-file', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [
+      { name: 'VRM Files', extensions: ['vrm'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+  
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
   }
   return null;
 });
